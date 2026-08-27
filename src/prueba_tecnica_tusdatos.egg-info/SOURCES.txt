@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+src/main.py
+src/prueba_tecnica_tusdatos.egg-info/PKG-INFO
+src/prueba_tecnica_tusdatos.egg-info/SOURCES.txt
+src/prueba_tecnica_tusdatos.egg-info/dependency_links.txt
+src/prueba_tecnica_tusdatos.egg-info/requires.txt
+src/prueba_tecnica_tusdatos.egg-info/top_level.txt

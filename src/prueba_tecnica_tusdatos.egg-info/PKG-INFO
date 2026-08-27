@@ -1,0 +1,22 @@
+Metadata-Version: 2.4
+Name: prueba-tecnica-tusdatos
+Version: 0.1.0
+Summary: Motor de web scraping desarrollado con Python y Playwright para la extracción y procesamiento confiable de datos.
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: playwright>=1.50.0
+Requires-Dist: pydantic>=2.10.0
+Requires-Dist: pydantic-settings>=2.7.0
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: beautifulsoup4>=4.12.0
+Requires-Dist: lxml>=5.3.0
+Requires-Dist: tenacity>=9.0.0
+Requires-Dist: pandas>=2.2.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.25.0; extra == "dev"
+Requires-Dist: ruff>=0.9.0; extra == "dev"
+Requires-Dist: black>=24.10.0; extra == "dev"
+
+# prueba-tecnica-tusdatos
+Motor de web scraping desarrollado con Python y Playwright para la extracción y procesamiento confiable de datos.
