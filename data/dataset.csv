@@ -1,0 +1,4 @@
+product_name,product_url,access_status,attempts,execution_time,failure_reason
+,,failed,3,7.05171769997105,CaptchaDetectedError
+,,failed,3,6.696583600016311,CaptchaDetectedError
+,,failed,3,6.721785499947146,CaptchaDetectedError

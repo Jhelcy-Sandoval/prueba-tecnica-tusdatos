@@ -29,7 +29,7 @@ async def main():
 
         runner = ScrapingRunner(
             scraper=scraper,
-            sample_count=3,
+            sample_count=settings.sample_count,
         )
 
         results = await runner.run(
@@ -46,10 +46,10 @@ async def main():
                 execution_time,
             )
 
-            if result.product is not None:
-                dataset_writer.save(
-                    result.product
-                )
+            dataset_writer.save(
+                result,
+                execution_time,
+            )
 
         print("Métricas:")
         print(metrics.summary())
