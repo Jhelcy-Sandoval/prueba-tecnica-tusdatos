@@ -1,26 +1,35 @@
-from playwright.sync_api import sync_playwright
+import asyncio
+
+from playwright.async_api import async_playwright
 
 from browser.browser_manager import BrowserManager
 from config.settings import Settings
+from scraper.g2_scraper import G2Scraper
 
 
-def main():
+async def main():
     settings = Settings()
 
-    with sync_playwright() as playwright:
+    async with async_playwright() as playwright:
         browser_manager = BrowserManager(playwright)
 
-        browser = browser_manager.start(headless=False)
+        browser = await browser_manager.start(
+            headless=settings.headless
+        )
 
-        page = browser.new_page()
+        page = await browser.new_page()
 
-        page.goto(settings.target_url)
+        scraper = G2Scraper()
 
-        print(f"Título: {page.title()}")
-        print(f"URL: {page.url}")
+        result = await scraper.scrape(
+            page,
+            settings.target_url,
+        )
 
-        browser_manager.close()
+        print(result)
+
+        await browser_manager.close()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

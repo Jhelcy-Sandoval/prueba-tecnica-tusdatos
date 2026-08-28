@@ -1,16 +1,17 @@
-from playwright.sync_api import Browser, Playwright
+from playwright.async_api import Browser, Playwright
 
 class BrowserManager:
-    def __init__(self, playwright):
+    def __init__(self, playwright: Playwright):
         self.playwright = playwright
-        self.browser = None
+        self.browser: Browser | None = None
 
-    def start(self, headless: bool = True):
-        self.browser = self.playwright.chromium.launch(
+    async def start(self, headless: bool = True) -> Browser:
+        self.browser = await self.playwright.chromium.launch(
             headless=headless
         )
         return self.browser
 
-    def close(self):
+    async def close(self) -> None:
         if self.browser:
-            self.browser.close()
+            await self.browser.close()
+            self.browser = None
