@@ -10,14 +10,17 @@ from resilience.exceptions import (
 )
 from resilience.retry_policy import RetryPolicy
 from scraper.base_scraper import BaseScraper
+from scraper.g2.g2_extractor import G2Extractor
+from validation.product import Product
 
 
 class G2Scraper(BaseScraper):
-    # Scraper g2.com
+    """Gestiona el proceso de scraping de G2."""
 
     def __init__(self):
         self.access_detector = AccessDetector()
         self.retry_policy = RetryPolicy()
+        self.extractor = G2Extractor()
 
     async def scrape(self, page: Page, url: str):
 
@@ -38,23 +41,14 @@ class G2Scraper(BaseScraper):
 
                 print(f"Estado de acceso: {status.value}")
 
-                if status == AccessStatus.CAPTCHA:
-                    raise CaptchaDetectedError(
-                        "G2 devolvió un desafío CAPTCHA."
-                    )
+                self._validate_access(status)
 
-                if status == AccessStatus.BLOCKED:
-                    raise AccessBlockedError(
-                        "G2 bloqueó el acceso."
-                    )
+                data = await self.extractor.extract(page)
 
-                if status == AccessStatus.UNKNOWN:
-                    raise NavigationError(
-                        "No se pudo determinar el estado de acceso."
-                    )
+                product = Product(**data)
 
                 return {
-                    "product_url": page.url,
+                    "data": product.model_dump(mode="json"),
                     "access_status": status.value,
                     "attempts": attempt + 1,
                 }
@@ -82,3 +76,19 @@ class G2Scraper(BaseScraper):
                 )
 
                 await asyncio.sleep(delay)
+
+    def _validate_access(self, status: AccessStatus) -> None:
+        if status == AccessStatus.CAPTCHA:
+            raise CaptchaDetectedError(
+                "G2 devolvió un desafío CAPTCHA."
+            )
+
+        if status == AccessStatus.BLOCKED:
+            raise AccessBlockedError(
+                "G2 bloqueó el acceso."
+            )
+
+        if status == AccessStatus.UNKNOWN:
+            raise NavigationError(
+                "No se pudo determinar el estado de acceso."
+            )

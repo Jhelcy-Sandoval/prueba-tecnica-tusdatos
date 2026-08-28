@@ -4,7 +4,7 @@ from playwright.async_api import async_playwright
 
 from browser.browser_manager import BrowserManager
 from config.settings import Settings
-from scraper.g2_scraper import G2Scraper
+from scraper.g2.g2_scraper import G2Scraper
 
 
 async def main():
