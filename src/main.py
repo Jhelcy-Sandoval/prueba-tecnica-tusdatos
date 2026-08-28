@@ -4,13 +4,17 @@ from playwright.async_api import async_playwright
 
 from browser.browser_manager import BrowserManager
 from config.settings import Settings
+from metrics.scraper_metrics import ScraperMetrics
 from persistence.dataset_writer import DatasetWriter
 from scraper.g2.g2_scraper import G2Scraper
+from scraper.scraping_runner import ScrapingRunner
 
 
 async def main():
     settings = Settings()
+
     dataset_writer = DatasetWriter()
+    metrics = ScraperMetrics()
 
     async with async_playwright() as playwright:
         browser_manager = BrowserManager(playwright)
@@ -23,17 +27,32 @@ async def main():
 
         scraper = G2Scraper()
 
-        result = await scraper.scrape(
+        runner = ScrapingRunner(
+            scraper=scraper,
+            sample_count=3,
+        )
+
+        results = await runner.run(
             page,
             settings.target_url,
         )
 
-        print(result)
+        for result, execution_time in results:
 
-        if result.product is not None:
-            dataset_writer.save(result.product)
+            print(result)
 
-            print("Producto guardado en el dataset.")
+            metrics.record(
+                result,
+                execution_time,
+            )
+
+            if result.product is not None:
+                dataset_writer.save(
+                    result.product
+                )
+
+        print("Métricas:")
+        print(metrics.summary())
 
         await browser_manager.close()
 
