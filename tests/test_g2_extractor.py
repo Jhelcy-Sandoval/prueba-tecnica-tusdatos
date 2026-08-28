@@ -3,6 +3,7 @@ from playwright.async_api import async_playwright
 
 from scraper.g2.g2_extractor import G2Extractor
 
+
 @pytest.mark.asyncio
 async def test_extract_product_name():
     async with async_playwright() as playwright:

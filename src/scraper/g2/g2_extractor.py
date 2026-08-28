@@ -1,9 +1,12 @@
 from playwright.async_api import Page
 
+
 class G2Extractor:
     """Extrae información de productos desde G2."""
 
     async def extract(self, page: Page) -> dict:
+        """Extrae y normaliza los datos disponibles del producto."""
+
         product_name = await self._extract_product_name(page)
 
         return {
@@ -12,7 +15,8 @@ class G2Extractor:
         }
 
     async def _extract_product_name(self, page: Page) -> str:
-        
+        """Extrae el nombre del producto."""
+
         locator = page.locator("h1").first
 
         if await locator.count() == 0:
@@ -21,8 +25,8 @@ class G2Extractor:
         product_name = (await locator.inner_text()).strip()
 
         suffixes = [
-            " reviews and product details",
-            " reviews",
+            " Reviews & Product Details",
+            " Reviews",
         ]
 
         for suffix in suffixes:
