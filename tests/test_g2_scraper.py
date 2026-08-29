@@ -1,13 +1,17 @@
 import pytest
 from playwright.async_api import async_playwright
 
+from config.settings import Settings
 from scraper.g2.g2_scraper import G2Scraper
 
 
 @pytest.mark.asyncio
 async def test_g2_scraper_success():
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True)
+        browser = await playwright.chromium.launch(
+            headless=True
+        )
+
         page = await browser.new_page()
 
         async def handle_route(route):
@@ -30,7 +34,9 @@ async def test_g2_scraper_success():
             handle_route,
         )
 
-        scraper = G2Scraper()
+        settings = Settings()
+
+        scraper = G2Scraper(settings)
 
         result = await scraper.scrape(
             page,

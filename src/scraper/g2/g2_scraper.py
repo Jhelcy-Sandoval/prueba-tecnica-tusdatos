@@ -2,6 +2,8 @@ import asyncio
 
 from playwright.async_api import Page
 
+from config.settings import Settings
+from integrations.captcha_provider import CaptchaProvider
 from resilience.access_detector import AccessDetector, AccessStatus
 from resilience.exceptions import (
     AccessBlockedError,
@@ -15,13 +17,13 @@ from validation.product import Product
 from validation.scraping_result import ScrapingResult
 
 
-class G2Scraper(BaseScraper):
-    """Gestiona el proceso de scraping de G2."""
+class G2Scraper:
 
-    def __init__(self):
+    def __init__(self, settings: Settings):
         self.access_detector = AccessDetector()
-        self.retry_policy = RetryPolicy()
+        self.retry_policy = RetryPolicy.from_settings(settings)
         self.extractor = G2Extractor()
+        self.captcha_provider = CaptchaProvider()
 
     async def scrape(
         self,
@@ -29,10 +31,13 @@ class G2Scraper(BaseScraper):
         url: str,
     ) -> ScrapingResult:
 
-        for attempt in range(self.retry_policy.max_attempts):
+        for attempt in range(
+            self.retry_policy.max_attempts
+        ):
 
             print(
-                f"Intento {attempt + 1}/"
+                f"Muestra de intento "
+                f"{attempt + 1}/"
                 f"{self.retry_policy.max_attempts}"
             )
 
@@ -42,15 +47,99 @@ class G2Scraper(BaseScraper):
                     wait_until="domcontentloaded",
                 )
 
-                status = await self.access_detector.detect(page)
+                status = await self.access_detector.detect(
+                    page
+                )
 
                 print(
                     f"Estado de acceso: {status.value}"
                 )
 
+                if status == AccessStatus.CAPTCHA:
+
+                    print(
+                        "CAPTCHA detectado. "
+                        "Buscando intervención autorizada..."
+                    )
+
+                    found = await self.captcha_provider.solve(
+                        page
+                    )
+
+                    if found:
+
+                        print(
+                            "captcha resuelto",
+                            found,
+                        )
+
+                        status = AccessStatus.SUCCESS
+
+                        await asyncio.sleep(2)
+
+                        print(
+                            "Verificando nuevamente "
+                            "el estado de la página..."
+                        )
+
+                        blocked = (
+                            await self.captcha_provider.is_blocked(
+                                page
+                            )
+                        )
+                        
+                        print("estatus", blocked)
+
+                        if blocked:
+
+                            status = AccessStatus.BLOCKED
+
+                            print(
+                                "La página continúa "
+                                "bloqueada."
+                            )
+
+                        else:
+
+                            print(
+                                "Página verificada. "
+                                "Continuando con la extracción."
+                            )
+
+                    else:
+
+                        print(
+                            "CAPTCHA no encontrado. "
+                            "Comprobando bloqueo..."
+                        )
+
+                        blocked = (
+                            await self.captcha_provider.is_blocked(
+                                page
+                            )
+                        )
+                        
+                        if blocked:
+
+                            status = AccessStatus.BLOCKED
+
+                            print(
+                                "Bloqueo de DataDome detectado."
+                            )
+
+                        else:
+
+                            print(
+                                "CAPTCHA presente, pero no "
+                                "se encontró el slider ni "
+                                "un bloqueo."
+                            )
+
                 self._validate_access(status)
 
-                data = await self.extractor.extract(page)
+                data = await self.extractor.extract(
+                    page
+                )
 
                 product = Product(**data)
 
@@ -66,7 +155,9 @@ class G2Scraper(BaseScraper):
                 NavigationError,
             ) as error:
 
-                print(f"Error: {error}")
+                print(
+                    f"Error: {error}"
+                )
 
                 if not self.retry_policy.should_retry(
                     attempt + 1
@@ -78,7 +169,9 @@ class G2Scraper(BaseScraper):
                         failure_reason=type(error).__name__,
                     )
 
-                delay = self.retry_policy.get_delay(attempt)
+                delay = self.retry_policy.get_delay(
+                    attempt
+                )
 
                 print(
                     f"Reintentando en {delay} segundos..."
@@ -90,7 +183,6 @@ class G2Scraper(BaseScraper):
         self,
         status: AccessStatus,
     ) -> None:
-        """Valida el estado de acceso antes de extraer."""
 
         if status == AccessStatus.CAPTCHA:
             raise CaptchaDetectedError(

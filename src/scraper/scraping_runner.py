@@ -1,3 +1,4 @@
+import asyncio
 import time
 from dataclasses import dataclass, field
 
@@ -13,6 +14,7 @@ class ScrapingRunner:
 
     scraper: BaseScraper
     sample_count: int = 1
+    sample_delay: float = 2.0
     results: list[
         tuple[ScrapingResult, float]
     ] = field(default_factory=list)
@@ -22,7 +24,7 @@ class ScrapingRunner:
         page: Page,
         url: str,
     ) -> list[tuple[ScrapingResult, float]]:
-        """Ejecuta las muestras y mide su tiempo"""
+        """Ejecuta las muestras y mide su tiempo."""
 
         self.results.clear()
 
@@ -47,5 +49,8 @@ class ScrapingRunner:
             self.results.append(
                 (result, execution_time)
             )
+
+            if sample < self.sample_count - 1:
+                await asyncio.sleep(self.sample_delay)
 
         return self.results

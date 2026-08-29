@@ -25,11 +25,12 @@ async def main():
 
         page = await browser.new_page()
 
-        scraper = G2Scraper()
+        scraper = G2Scraper(settings)
 
         runner = ScrapingRunner(
             scraper=scraper,
             sample_count=settings.sample_count,
+            sample_delay=settings.sample_delay,
         )
 
         results = await runner.run(
@@ -51,7 +52,7 @@ async def main():
                 execution_time,
             )
 
-        print("Métricas:")
+        print("\nMétricas:")
         print(metrics.summary())
 
         await browser_manager.close()
