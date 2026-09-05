@@ -1,0 +1,10 @@
+sample_id,product_name,product_url,rating,reviews,access_status,attempts,execution_time,failure_reason
+1,Tekmetric,https://www.g2.com/products/tekmetric/reviews,4.9,504,success,1,23.513326699845493,
+1,Quantum Metric,https://www.g2.com/products/quantum-metric/reviews,4.6,276,success,1,23.513326699845493,
+1,ThoughtMetric,https://www.g2.com/products/thoughtmetric/reviews,4.7,40,success,1,23.513326699845493,
+2,Tekmetric,https://www.g2.com/products/tekmetric/reviews,4.9,504,success,1,17.77972379978746,
+2,Quantum Metric,https://www.g2.com/products/quantum-metric/reviews,4.6,276,success,1,17.77972379978746,
+2,ThoughtMetric,https://www.g2.com/products/thoughtmetric/reviews,4.7,40,success,1,17.77972379978746,
+3,Tekmetric,https://www.g2.com/products/tekmetric/reviews,4.9,504,success,1,17.402051100041717,
+3,Quantum Metric,https://www.g2.com/products/quantum-metric/reviews,4.6,276,success,1,17.402051100041717,
+3,ThoughtMetric,https://www.g2.com/products/thoughtmetric/reviews,4.7,40,success,1,17.402051100041717,
