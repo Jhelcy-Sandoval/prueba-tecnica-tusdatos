@@ -3,8 +3,9 @@ import asyncio
 from playwright.async_api import Page
 
 from config.settings import Settings
-from integrations.captcha_provider import CaptchaProvider
-from resilience.access_detector import AccessDetector, AccessStatus
+from integrations.captcha.g2_captcha_provider import G2CaptchaProvider
+from resilience.access_detector import AccessDetector
+from resilience.access_handler import AccessHandler
 from resilience.exceptions import (
     AccessBlockedError,
     CaptchaDetectedError,
@@ -13,139 +14,141 @@ from resilience.exceptions import (
 from resilience.retry_policy import RetryPolicy
 from scraper.base_scraper import BaseScraper
 from scraper.g2.g2_extractor import G2Extractor
+from scraper.g2.g2_searcher import G2Searcher
+from scraper.g2.g2_ui_handler import G2UIHandler
 from validation.product import Product
 from validation.scraping_result import ScrapingResult
 
 
-class G2Scraper:
+class G2Scraper(BaseScraper):
+    '''
+    Coordina el proceso de scraping de G2, incluyendo la
+    navegación, validación de acceso, búsqueda, extracción
+    de productos y manejo de reintentos.
+    '''
 
     def __init__(self, settings: Settings):
+        '''
+        Inicializa el scraper con la configuración y los
+        componentes necesarios para ejecutar el flujo.
+        '''
+
+        self.retry_policy = RetryPolicy.from_settings(
+            settings
+        )
+
         self.access_detector = AccessDetector()
-        self.retry_policy = RetryPolicy.from_settings(settings)
-        self.extractor = G2Extractor()
-        self.captcha_provider = CaptchaProvider()
+
+        g2_captcha_provider = G2CaptchaProvider()
+
+        self.access_handler = AccessHandler(
+            access_detector=self.access_detector,
+            captcha_provider=g2_captcha_provider,
+        )
+
+        self.g2_searcher = G2Searcher(
+            search_query=settings.g2_search_query
+        )
+
+        ui_handler = G2UIHandler()
+
+        self.extractor = G2Extractor(
+            ui_handler=ui_handler,
+            access_handler=self.access_handler,
+        )
 
     async def scrape(
         self,
         page: Page,
         url: str,
     ) -> ScrapingResult:
+        '''
+        Ejecuta el proceso de scraping de G2 y retorna el
+        resultado de la ejecución junto con su estado de acceso
+        y cantidad de intentos realizados.
+        '''
 
         for attempt in range(
             self.retry_policy.max_attempts
         ):
 
-            print(
-                f"Muestra de intento "
-                f"{attempt + 1}/"
-                f"{self.retry_policy.max_attempts}"
-            )
-
             try:
+
+                print(
+                    f"Intento {attempt + 1}/"
+                    f"{self.retry_policy.max_attempts}"
+                )
+
+                # Navegación inicial
                 await page.goto(
                     url,
                     wait_until="domcontentloaded",
                 )
 
-                status = await self.access_detector.detect(
+                # Validar acceso
+                access = await self.access_handler.check(
                     page
                 )
 
-                print(
-                    f"Estado de acceso: {status.value}"
+                access.validate()
+
+                # Realizar búsqueda
+                search_success = (
+                    await self.g2_searcher.search(page)
                 )
 
-                if status == AccessStatus.CAPTCHA:
-
-                    print(
-                        "CAPTCHA detectado. "
-                        "Buscando intervención autorizada..."
+                if not search_success:
+                    raise NavigationError(
+                        "No fue posible realizar "
+                        "la búsqueda en G2."
                     )
 
-                    found = await self.captcha_provider.solve(
-                        page
-                    )
+                # Validar acceso después de la búsqueda
+                access = await self.access_handler.check(
+                    page
+                )
 
-                    if found:
+                access.validate()
 
-                        print(
-                            "captcha resuelto",
-                            found,
-                        )
-
-                        status = AccessStatus.SUCCESS
-
-                        await asyncio.sleep(2)
-
-                        print(
-                            "Verificando nuevamente "
-                            "el estado de la página..."
-                        )
-
-                        blocked = (
-                            await self.captcha_provider.is_blocked(
-                                page
-                            )
-                        )
-                        
-                        print("estatus", blocked)
-
-                        if blocked:
-
-                            status = AccessStatus.BLOCKED
-
-                            print(
-                                "La página continúa "
-                                "bloqueada."
-                            )
-
-                        else:
-
-                            print(
-                                "Página verificada. "
-                                "Continuando con la extracción."
-                            )
-
-                    else:
-
-                        print(
-                            "CAPTCHA no encontrado. "
-                            "Comprobando bloqueo..."
-                        )
-
-                        blocked = (
-                            await self.captcha_provider.is_blocked(
-                                page
-                            )
-                        )
-                        
-                        if blocked:
-
-                            status = AccessStatus.BLOCKED
-
-                            print(
-                                "Bloqueo de DataDome detectado."
-                            )
-
-                        else:
-
-                            print(
-                                "CAPTCHA presente, pero no "
-                                "se encontró el slider ni "
-                                "un bloqueo."
-                            )
-
-                self._validate_access(status)
-
+                # Extraer productos
                 data = await self.extractor.extract(
                     page
                 )
 
-                product = Product(**data)
+                if not data.get("search_success"):
+                    raise NavigationError(
+                        "No se encontraron "
+                        "productos en G2."
+                    )
 
+                # Convertir resultados a modelos
+                products = [
+                    Product(
+                        product_name=item["name"],
+                        product_url=item["url"],
+                        rating=item["rating"],
+                        reviews=item["reviews"],
+                    )
+                    for item in data["products"]
+                ]
+
+                print(
+                    data["message"]
+                )
+
+                print(
+                    "Productos encontrados:"
+                )
+
+                for product in products:
+                    print(
+                        f"- {product.product_name}"
+                    )
+
+                # Retornar resultado
                 return ScrapingResult(
-                    product=product,
-                    access_status=status.value,
+                    products=products,
+                    access_status=access.status,
                     attempts=attempt + 1,
                 )
 
@@ -163,38 +166,32 @@ class G2Scraper:
                     attempt + 1
                 ):
                     return ScrapingResult(
-                        product=None,
+                        products=[],
                         access_status="failed",
                         attempts=attempt + 1,
-                        failure_reason=type(error).__name__,
+                        failure_reason=(
+                            type(error).__name__
+                        ),
                     )
 
-                delay = self.retry_policy.get_delay(
-                    attempt
+                delay = (
+                    self.retry_policy.get_delay(
+                        attempt
+                    )
                 )
 
                 print(
-                    f"Reintentando en {delay} segundos..."
+                    f"Reintentando en "
+                    f"{delay} segundos..."
                 )
 
-                await asyncio.sleep(delay)
+                await asyncio.sleep(
+                    delay
+                )
 
-    def _validate_access(
-        self,
-        status: AccessStatus,
-    ) -> None:
-
-        if status == AccessStatus.CAPTCHA:
-            raise CaptchaDetectedError(
-                "G2 devolvió un desafío CAPTCHA."
-            )
-
-        if status == AccessStatus.BLOCKED:
-            raise AccessBlockedError(
-                "G2 bloqueó el acceso."
-            )
-
-        if status == AccessStatus.UNKNOWN:
-            raise NavigationError(
-                "No se pudo determinar el estado de acceso."
-            )
+        return ScrapingResult(
+            products=[],
+            access_status="failed",
+            attempts=self.retry_policy.max_attempts,
+            failure_reason="MaxAttemptsExceeded",
+        )

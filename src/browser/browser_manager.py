@@ -1,17 +1,96 @@
-from playwright.async_api import Browser, Playwright
-
-class BrowserManager:
-    def __init__(self, playwright: Playwright):
-        self.playwright = playwright
-        self.browser: Browser | None = None
-
-    async def start(self, headless: bool = True) -> Browser:
-        self.browser = await self.playwright.chromium.launch(
-            headless=headless
-        )
-        return self.browser
-
-    async def close(self) -> None:
-        if self.browser:
-            await self.browser.close()
-            self.browser = None
+import asyncio 
+from pathlib import Path 
+from playwright.async_api import ( 
+    BrowserContext, 
+    Page, 
+    Playwright, 
+) 
+ 
+class BrowserManager: 
+ 
+    def __init__(self, playwright: Playwright): 
+        self.playwright = playwright 
+        self.context: BrowserContext | None = None 
+ 
+    async def start( 
+        self, 
+        headless: bool = False, 
+    ) -> BrowserContext: 
+        '''
+        Inicia el navegador Brave utilizando un contexto persistente
+        y configura los parámetros necesarios para la navegación.
+        '''
+ 
+        profile_path = Path("playwright-brave-profile").resolve() 
+ 
+        # Configuración de argumentos nativos para el navegador.
+        launch_args = [ 
+            "--disable-blink-features=AutomationControlled",   
+            "--disable-infobars",                             
+            "--no-sandbox", 
+            "--disable-dev-shm-usage" 
+        ] 
+ 
+        self.context = await self.playwright.chromium.launch_persistent_context( 
+            user_data_dir=str(profile_path), 
+            headless=headless, 
+            executable_path=( 
+                r"C:\Users\jhelc\AppData\Local" 
+                r"\BraveSoftware\Brave-Browser\Application" 
+                r"\brave.exe" 
+            ), 
+            viewport={ 
+                "width": 1280, 
+                "height": 720, 
+            }, 
+            locale="es-419", 
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36", 
+            args=launch_args, 
+        ) 
+ 
+        self.context.on("page", lambda page: asyncio.create_task(self._setup_page_protection(page))) 
+ 
+        return self.context 
+ 
+    async def _setup_page_protection(self, page: Page) -> None: 
+        '''
+        Configura los scripts de inicialización y las reglas
+        de navegación aplicadas a las páginas del navegador.
+        '''
+ 
+        await page.add_init_script(""" 
+            Object.defineProperty(navigator, 'webdriver', { 
+                get: () => undefined 
+            }); 
+        """) 
+         
+        async def block_telemetry(route): 
+            # Filtrar solicitudes de telemetría que no son necesarias.
+            url = route.request.url.lower() 
+            if "cookie_consent/accept" in url or "newrelic" in url or "bam.nr-data.net" in url: 
+                await route.abort() 
+            else: 
+                await route.continue_() 
+ 
+        await page.route("**/*", block_telemetry) 
+ 
+    async def apply_stealth( 
+        self, 
+        page: Page, 
+    ) -> None: 
+        '''
+        Aplica la configuración de protección a una página
+        existente del contexto del navegador.
+        '''
+ 
+        await self._setup_page_protection(page) 
+ 
+    async def close(self) -> None: 
+        '''
+        Cierra el contexto del navegador y libera los recursos
+        utilizados durante la ejecución.
+        '''
+ 
+        if self.context: 
+            await self.context.close() 
+            self.context = None 

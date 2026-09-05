@@ -2,11 +2,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Centraliza la configuración del scraper y su estrategia de ejecución."""
+
     target_url: str
     search_query: str
-    
+    g2_search_query: str | None = None
+
     headless: bool = False
-    timeout: int = 30000
 
     sample_count: int = 3
     sample_delay: float = 2.0

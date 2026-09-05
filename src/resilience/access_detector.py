@@ -1,26 +1,58 @@
-from enum import Enum
+import asyncio
 
 from playwright.async_api import Page
 
-
-class AccessStatus(Enum):
-    # estados posibles
-    SUCCESS = "success"
-    CAPTCHA = "captcha"
-    BLOCKED = "blocked"
-    UNKNOWN = "unknown"
+from resilience.access_result import (
+    AccessBlocked,
+    AccessGranted,
+    AccessResult,
+    CaptchaRequired,
+)
 
 
 class AccessDetector:
-    # detector del estado de la pagina
+    '''
+    Detecta el estado de acceso de una página durante
+    el proceso de scraping.
+    '''
 
-    async def detect(self, page: Page) -> AccessStatus:
-        content = (await page.content()).lower()
+    async def detect(
+        self,
+        page: Page,
+    ) -> AccessResult:
+        '''
+        Analiza el contenido de la página para determinar
+        si el acceso fue concedido, bloqueado o requiere
+        una verificación CAPTCHA.
+        '''
 
-        if "datadome captcha" in content or "captcha-delivery.com" in content:
-            return AccessStatus.CAPTCHA
+        try:
+            content = (
+                await page.content()
+            ).lower()
 
-        if "access denied" in content or "access blocked" in content:
-            return AccessStatus.BLOCKED
+        except Exception as error:
+            print(
+                "La página todavía está navegando. "
+                f"Esperando antes de detectar acceso: {error}"
+            )
 
-        return AccessStatus.SUCCESS
+            await asyncio.sleep(2)
+
+            content = (
+                await page.content()
+            ).lower()
+
+        if (
+            "datadome" in content
+            or "captcha-delivery.com" in content
+        ):
+            return CaptchaRequired()
+
+        if (
+            "access denied" in content
+            or "access blocked" in content
+        ):
+            return AccessBlocked()
+
+        return AccessGranted()

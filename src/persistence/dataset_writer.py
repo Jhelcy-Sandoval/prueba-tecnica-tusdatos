@@ -5,17 +5,44 @@ from validation.scraping_result import ScrapingResult
 
 
 class DatasetWriter:
-    """Guarda los resultados de scraping en un archivo CSV."""
+    '''
+    Guarda los resultados de las ejecuciones del scraper
+    en un archivo CSV.
+    '''
 
-    def __init__(self, file_path: str = "data/dataset.csv"):
+    FIELDNAMES = [
+        "sample_id",
+        "product_name",
+        "product_url",
+        "rating",
+        "reviews",
+        "access_status",
+        "attempts",
+        "execution_time",
+        "failure_reason",
+    ]
+
+    def __init__(
+        self,
+        file_path: str = "data/dataset.csv",
+    ):
+        '''
+        Inicializa el escritor con la ruta del archivo
+        donde se almacenará el dataset.
+        '''
+
         self.file_path = Path(file_path)
 
     def save(
         self,
         result: ScrapingResult,
         execution_time: float,
+        sample_id: int,
     ) -> None:
-        """Agrega una ejecución al dataset."""
+        '''
+        Agrega al dataset los productos obtenidos en una
+        ejecución junto con sus datos de ejecución y estado.
+        '''
 
         self.file_path.parent.mkdir(
             parents=True,
@@ -32,33 +59,27 @@ class DatasetWriter:
 
             writer = csv.DictWriter(
                 file,
-                fieldnames=[
-                    "product_name",
-                    "product_url",
-                    "access_status",
-                    "attempts",
-                    "execution_time",
-                    "failure_reason",
-                ],
+                fieldnames=self.FIELDNAMES,
             )
 
             if not file_exists:
                 writer.writeheader()
 
-            product_name = ""
-            product_url = ""
-
-            if result.product is not None:
-                product_name = result.product.product_name
-                product_url = str(result.product.product_url)
-
-            writer.writerow(
-                {
-                    "product_name": product_name,
-                    "product_url": product_url,
-                    "access_status": result.access_status,
-                    "attempts": result.attempts,
-                    "execution_time": execution_time,
-                    "failure_reason": result.failure_reason or "",
-                }
-            )
+            for product in result.products:
+                writer.writerow(
+                    {
+                        "sample_id": sample_id,
+                        "product_name": product.product_name,
+                        "product_url": str(
+                            product.product_url
+                        ),
+                        "rating": product.rating,
+                        "reviews": product.reviews,
+                        "access_status": result.access_status,
+                        "attempts": result.attempts,
+                        "execution_time": execution_time,
+                        "failure_reason": (
+                            result.failure_reason or ""
+                        ),
+                    }
+                )
