@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     max_attempts: int = 3
     base_delay: float = 2.0
     manual_intervention_delay: float = 30.0
+    browser: str = "chromium"
+    browser_path: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

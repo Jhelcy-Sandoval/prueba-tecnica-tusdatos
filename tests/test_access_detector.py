@@ -1,7 +1,12 @@
 import pytest
 from playwright.async_api import async_playwright
 
-from resilience.access_detector import AccessDetector, AccessStatus
+from resilience.access_detector import AccessDetector
+from resilience.access_result import (
+    AccessBlocked,
+    AccessGranted,
+    CaptchaRequired,
+)
 
 
 @pytest.mark.asyncio
@@ -20,9 +25,10 @@ async def test_detect_success():
 
         detector = AccessDetector()
 
-        status = await detector.detect(page)
+        result = await detector.detect(page)
 
-        assert status == AccessStatus.SUCCESS
+        assert isinstance(result, AccessGranted)
+        assert result.status == "success"
 
         await browser.close()
 
@@ -46,9 +52,10 @@ async def test_detect_captcha():
 
         detector = AccessDetector()
 
-        status = await detector.detect(page)
+        result = await detector.detect(page)
 
-        assert status == AccessStatus.CAPTCHA
+        assert isinstance(result, CaptchaRequired)
+        assert result.status == "captcha"
 
         await browser.close()
 
@@ -69,8 +76,9 @@ async def test_detect_blocked():
 
         detector = AccessDetector()
 
-        status = await detector.detect(page)
+        result = await detector.detect(page)
 
-        assert status == AccessStatus.BLOCKED
+        assert isinstance(result, AccessBlocked)
+        assert result.status == "blocked"
 
         await browser.close()

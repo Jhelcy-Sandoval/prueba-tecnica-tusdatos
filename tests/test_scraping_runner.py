@@ -22,7 +22,7 @@ class FakeScraper(BaseScraper):
         )
 
         return ScrapingResult(
-            product=product,
+            products=[product],
             access_status="success",
             attempts=1,
         )
@@ -51,10 +51,13 @@ async def test_scraping_runner_executes_requested_samples():
 
         assert len(results) == 3
 
-        for result, execution_time in results:
+        for sample_id, result, execution_time in results:
+            assert sample_id in (1, 2, 3)
             assert result.access_status == "success"
-            assert result.product is not None
-            assert result.product.product_name == "Metric.ai"
+            assert len(result.products) == 1
+            assert result.products[0].product_name == "Metric.ai"
             assert execution_time >= 0
+
+        assert [sample_id for sample_id, _, _ in results] == [1, 2, 3]
 
         await browser.close()

@@ -14,7 +14,7 @@ def test_record_successful_request():
     metrics = ScraperMetrics()
 
     result = ScrapingResult(
-        product=create_product(),
+        products=[create_product()],
         access_status="success",
         attempts=1,
     )
@@ -32,7 +32,7 @@ def test_record_failed_request():
     metrics = ScraperMetrics()
 
     result = ScrapingResult(
-        product=None,
+        products=[],
         access_status="failed",
         attempts=3,
         failure_reason="CaptchaDetectedError",
@@ -51,13 +51,13 @@ def test_calculate_rates():
     metrics = ScraperMetrics()
 
     success = ScrapingResult(
-        product=create_product(),
+        products=[create_product()],
         access_status="success",
         attempts=1,
     )
 
     failure = ScrapingResult(
-        product=None,
+        products=[],
         access_status="failed",
         attempts=3,
         failure_reason="CaptchaDetectedError",
@@ -74,7 +74,7 @@ def test_calculate_average_execution_time():
     metrics = ScraperMetrics()
 
     result = ScrapingResult(
-        product=create_product(),
+        products=[create_product()],
         access_status="success",
         attempts=1,
     )
@@ -89,13 +89,13 @@ def test_calculate_average_attempts():
     metrics = ScraperMetrics()
 
     result_one = ScrapingResult(
-        product=create_product(),
+        products=[create_product()],
         access_status="success",
         attempts=1,
     )
 
     result_two = ScrapingResult(
-        product=create_product(),
+        products=[create_product()],
         access_status="success",
         attempts=3,
     )
@@ -110,7 +110,7 @@ def test_summary():
     metrics = ScraperMetrics()
 
     result = ScrapingResult(
-        product=create_product(),
+        products=[create_product()],
         access_status="success",
         attempts=1,
     )

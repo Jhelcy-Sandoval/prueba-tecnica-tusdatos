@@ -27,7 +27,10 @@ async def main():
 
     async with async_playwright() as playwright:
 
-        browser_manager = BrowserManager(playwright)
+        browser_manager = BrowserManager(
+            playwright=playwright,
+            settings=settings,
+        )
 
         # Brave con perfil persistente
         context = await browser_manager.start(
