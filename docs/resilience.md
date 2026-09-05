@@ -2,7 +2,7 @@
 
 Este documento describe las estrategias implementadas para mantener la continuidad del proceso de extracción ante errores de navegación, verificaciones de acceso, CAPTCHA y otros fallos recuperables. El objetivo es evitar que un fallo individual interrumpa el conjunto de ejecuciones, permitiendo que el sistema registre el resultado de cada muestra para su posterior análisis.
 
-Este documento complementa la [Arquitectura del Sistema](./arquitectura.md) y el [Flujo de Scraping](./scraping_flow.md): describe específicamente *cómo* el sistema se recupera cuando algo falla.
+Este documento complementa la [Arquitectura del Sistema](./architecture.md) y el [Flujo de Scraping](./scraping-flow.md): describe específicamente *cómo* el sistema se recupera cuando algo falla.
 
 ---
 

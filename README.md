@@ -10,9 +10,9 @@ Motor de extracción de información de productos desde G2 diseñado para proces
 
 | Documento | Contenido |
 |---|---|
-| [`arquitectura.md`](./docs/architecture.md) | Componentes del sistema, responsabilidades y diagrama de dependencias. |
+| [`architecture.md`](./docs/architecture.md) | Componentes del sistema, responsabilidades y diagrama de dependencias. |
 | [`scraping-flow.md`](./docs/scraping-flow.md) | Secuencia de ejecución paso a paso, desde la configuración hasta el reporte final. |
-| [`resiliencia.md`](./docs/resilience.md) | Detección de acceso, gestión de CAPTCHA, `RetryPolicy` y backoff exponencial. |
+| [`resilience.md`](./docs/resilience.md) | Detección de acceso, gestión de CAPTCHA, `RetryPolicy` y backoff exponencial. |
 
 ---
 

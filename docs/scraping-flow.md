@@ -2,7 +2,7 @@
 
 Este documento describe el flujo de ejecución del sistema de scraping para G2: la secuencia de pasos que ocurre desde la inicialización hasta la persistencia de resultados, incluyendo los puntos de verificación de acceso y las decisiones que puede tomar el sistema en cada etapa.
 
-Este documento complementa la [Arquitectura del Sistema](./arquitectura.md) y la [Estrategia de Resiliencia](./resiliencia.md): mientras esos documentos describen *componentes* y *manejo de errores*, este describe el *orden temporal* en que ocurren las cosas.
+Este documento complementa la [Arquitectura del Sistema](./architecture.md) y la [Estrategia de Resiliencia](./resilience.md): mientras esos documentos describen *componentes* y *manejo de errores*, este describe el *orden temporal* en que ocurren las cosas.
 
 ---
 
