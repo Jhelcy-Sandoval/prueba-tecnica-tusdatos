@@ -1,5 +1,6 @@
-from resilience.retry_policy import RetryPolicy
 from config.settings import Settings
+from resilience.retry_policy import RetryPolicy
+
 
 def test_should_retry():
     policy = RetryPolicy(
@@ -33,9 +34,13 @@ def test_get_manual_intervention_delay():
     )
 
     assert policy.get_manual_intervention_delay() == 30.0
-    
+
+
 def test_retry_policy_from_settings():
-    settings = Settings()
+    settings = Settings(
+        target_url="https://www.g2.com",
+        search_query="software metrics",
+    )
 
     policy = RetryPolicy.from_settings(settings)
 

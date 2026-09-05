@@ -19,7 +19,7 @@ def create_success_result(
     product: Product,
 ) -> ScrapingResult:
     return ScrapingResult(
-        product=product,
+        products=[product],
         access_status="success",
         attempts=1,
     )
@@ -29,7 +29,6 @@ def test_dataset_writer_creates_csv(tmp_path):
     file_path = tmp_path / "dataset.csv"
 
     product = create_product()
-
     result = create_success_result(product)
 
     writer = DatasetWriter(str(file_path))
@@ -37,6 +36,7 @@ def test_dataset_writer_creates_csv(tmp_path):
     writer.save(
         result,
         execution_time=2.5,
+        sample_id=1,
     )
 
     assert file_path.exists()
@@ -48,6 +48,7 @@ def test_dataset_writer_creates_csv(tmp_path):
         rows = list(csv.DictReader(file))
 
     assert len(rows) == 1
+    assert rows[0]["sample_id"] == "1"
     assert rows[0]["product_name"] == "Metric.ai"
     assert rows[0]["product_url"] == (
         "https://www.g2.com/products/metric-ai/reviews"
@@ -76,11 +77,13 @@ def test_dataset_writer_appends_products(tmp_path):
     writer.save(
         result_1,
         execution_time=2.0,
+        sample_id=1,
     )
 
     writer.save(
         result_2,
         execution_time=3.0,
+        sample_id=2,
     )
 
     with file_path.open(
@@ -91,25 +94,36 @@ def test_dataset_writer_appends_products(tmp_path):
 
     assert len(rows) == 2
 
+    assert rows[0]["sample_id"] == "1"
     assert rows[0]["product_name"] == "Metric.ai"
+
+    assert rows[1]["sample_id"] == "2"
     assert rows[1]["product_name"] == "Product 2"
 
 
-def test_dataset_writer_saves_failed_result(tmp_path):
+def test_dataset_writer_saves_multiple_products(tmp_path):
     file_path = tmp_path / "dataset.csv"
 
+    products = [
+        create_product(),
+        create_product(
+            name="Product 2",
+            url="https://www.g2.com/products/product-2/reviews",
+        ),
+    ]
+
     result = ScrapingResult(
-        product=None,
-        access_status="failed",
-        attempts=3,
-        failure_reason="CaptchaDetectedError",
+        products=products,
+        access_status="success",
+        attempts=1,
     )
 
     writer = DatasetWriter(str(file_path))
 
     writer.save(
         result,
-        execution_time=6.8,
+        execution_time=2.5,
+        sample_id=1,
     )
 
     with file_path.open(
@@ -118,13 +132,8 @@ def test_dataset_writer_saves_failed_result(tmp_path):
     ) as file:
         rows = list(csv.DictReader(file))
 
-    assert len(rows) == 1
-
-    assert rows[0]["product_name"] == ""
-    assert rows[0]["product_url"] == ""
-    assert rows[0]["access_status"] == "failed"
-    assert rows[0]["attempts"] == "3"
-    assert rows[0]["execution_time"] == "6.8"
-    assert rows[0]["failure_reason"] == (
-        "CaptchaDetectedError"
-    )
+    assert len(rows) == 2
+    assert rows[0]["sample_id"] == "1"
+    assert rows[1]["sample_id"] == "1"
+    assert rows[0]["product_name"] == "Metric.ai"
+    assert rows[1]["product_name"] == "Product 2"
