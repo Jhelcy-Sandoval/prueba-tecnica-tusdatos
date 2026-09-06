@@ -1,0 +1,6 @@
+{
+    "proxies": [
+        "http://username:password@proxy-host:port",
+        "http://username:password@proxy-host:port"
+    ]
+}
