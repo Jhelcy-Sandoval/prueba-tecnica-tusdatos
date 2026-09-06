@@ -1,4 +1,8 @@
 from playwright.async_api import Page
+from playwright.async_api import (
+    Page,
+    TimeoutError as PlaywrightTimeoutError,
+)
 
 from resilience.access_handler import AccessHandler
 from resilience.exceptions import (
@@ -180,19 +184,12 @@ class G2Extractor:
         page: Page,
     ) -> dict:
         '''
-        Extrae el rating y la cantidad de reviews disponibles
-        en la página de un producto.
+        Extrae el rating y el número de reviews
+        de un producto de G2.
         '''
 
-        print(
-            "URL actual:",
-            page.url,
-        )
-
-        print(
-            "Título:",
-            await page.title(),
-        )
+        print("URL actual:", page.url)
+        print("Título:", await page.title())
 
         rating = None
         reviews = None
@@ -201,7 +198,11 @@ class G2Extractor:
             ".elv-star-wrapper__desc__rating"
         ).first
 
-        if await rating_locator.count() > 0:
+        try:
+            await rating_locator.wait_for(
+                state="attached",
+                timeout=6000,
+            )
 
             rating_text = (
                 await rating_locator.inner_text()
@@ -216,23 +217,27 @@ class G2Extractor:
                 rating = float(
                     rating_text.split("/")[0]
                 )
-
             except ValueError as error:
                 print(
-                    "No fue posible convertir "
+                    f"No fue posible convertir "
                     f"el rating: {error}"
                 )
 
-        else:
+        except PlaywrightTimeoutError:
             print(
-                "Rating no encontrado."
+                "Rating no encontrado "
+                "(timeout esperando el elemento)."
             )
 
         reviews_locator = page.locator(
             ".elv-star-wrapper__desc__count"
         ).first
 
-        if await reviews_locator.count() > 0:
+        try:
+            await reviews_locator.wait_for(
+                state="attached",
+                timeout=6000,
+            )
 
             reviews_text = (
                 await reviews_locator.inner_text()
@@ -243,15 +248,14 @@ class G2Extractor:
                 reviews_text,
             )
 
-            # Cambio: usamos el parser existente
-            # para soportar "(504)" y "(7,964)".
             reviews = self._parse_reviews(
                 reviews_text
             )
 
-        else:
+        except PlaywrightTimeoutError:
             print(
-                "Reviews no encontrado."
+                "Reviews no encontrado "
+                "(timeout esperando el elemento)."
             )
 
         return {

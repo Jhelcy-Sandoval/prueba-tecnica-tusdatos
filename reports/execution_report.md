@@ -1,13 +1,13 @@
-# Scraper Execution Report
-
-## Metrics
-
-| Metric | Value |
-|---|---:|
-| Total requests | 19 |
-| Successful requests | 18 |
-| Failed requests | 1 |
-| Success rate | 94.74% |
-| Failure rate | 5.26% |
-| Average execution time | 18.73 s |
-| Average attempts | 1.11 |
+# Scraper Execution Report 
+ 
+## Metrics 
+ 
+| Metric | Value | 
+|---|---:| 
+| Total requests | 10 | 
+| Successful requests | 10 | 
+| Failed requests | 0 | 
+| Success rate | 100.00% | 
+| Failure rate | 0.00% | 
+| Average execution time | 17.22 s | 
+| Average attempts | 1.00 | 
