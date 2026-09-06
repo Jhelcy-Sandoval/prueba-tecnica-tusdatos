@@ -60,6 +60,12 @@ Variables de entorno principales (definidas en `Settings`):
 
 Crea un archivo `.env` en la raíz del proyecto con estas variables antes de ejecutar. **No subas `.env` al repositorio.**
 
+### Archivo de proxies (`proxies.json`)
+
+La rotación de entorno ante un bloqueo de acceso (ver [`resilience.md`](./docs/resilience.md)) depende de una lista de proxies configurada por separado. `Settings` carga este archivo para que `BrowserManager` pueda rotar al siguiente entorno disponible.
+
+Crea un archivo `proxies.json` en la raíz del proyecto (o en la ruta que indique `Settings`) con una lista de proxies disponibles. **No subas `proxies.json` al repositorio** si contiene credenciales o URLs privadas.
+
 ---
 
 ## Ejecución
@@ -135,4 +141,4 @@ docker compose up --build
 - [ ] Revisar `success_rate`, `failure_rate`, `average_execution_time` y `average_attempts`.
 - [ ] Revisar el dataset: `sample_id`, URLs, ratings, reviews y estados de acceso.
 - [ ] Generar el reporte después de registrar las métricas.
-- [ ] Confirmar que `.env`, `.venv`, perfiles de navegador y cachés no se suban al repositorio.
+- [ ] Confirmar que `.env`, `proxies.json`, `.venv`, perfiles de navegador y cachés no se suban al repositorio.

@@ -2,6 +2,7 @@ import asyncio
 
 from playwright.async_api import Page
 
+from browser.browser_manager import BrowserManager
 from config.settings import Settings
 from integrations.captcha.g2_captcha_provider import G2CaptchaProvider
 from resilience.access_detector import AccessDetector
@@ -22,15 +23,18 @@ from validation.scraping_result import ScrapingResult
 
 class G2Scraper(BaseScraper):
     '''
-    Coordina el proceso de scraping de G2, incluyendo la
-    navegación, validación de acceso, búsqueda, extracción
-    de productos y manejo de reintentos.
+    Ejecuta el proceso de extracción de información de G2
+    aplicando validación de acceso, CAPTCHA, reintentos y
+    rotación de proxy ante bloqueos.
     '''
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+    ):
         '''
-        Inicializa el scraper con la configuración y los
-        componentes necesarios para ejecutar el flujo.
+        Inicializa las dependencias necesarias para realizar
+        el proceso de scraping de G2.
         '''
 
         self.retry_policy = RetryPolicy.from_settings(
@@ -61,40 +65,37 @@ class G2Scraper(BaseScraper):
         self,
         page: Page,
         url: str,
+        browser_manager: BrowserManager,
     ) -> ScrapingResult:
         '''
-        Ejecuta el proceso de scraping de G2 y retorna el
-        resultado de la ejecución junto con su estado de acceso
-        y cantidad de intentos realizados.
+        Ejecuta una extracción de G2 y utiliza un nuevo proxy
+        cuando el acceso actual es bloqueado.
         '''
+
+        current_page = page
 
         for attempt in range(
             self.retry_policy.max_attempts
         ):
-
             try:
-
                 print(
                     f"Intento {attempt + 1}/"
                     f"{self.retry_policy.max_attempts}"
                 )
 
-                # Navegación inicial
-                await page.goto(
+                await current_page.goto(
                     url,
                     wait_until="domcontentloaded",
                 )
 
-                # Validar acceso
                 access = await self.access_handler.check(
-                    page
+                    current_page
                 )
 
                 access.validate()
 
-                # Realizar búsqueda
-                search_success = (
-                    await self.g2_searcher.search(page)
+                search_success = await self.g2_searcher.search(
+                    current_page
                 )
 
                 if not search_success:
@@ -103,25 +104,21 @@ class G2Scraper(BaseScraper):
                         "la búsqueda en G2."
                     )
 
-                # Validar acceso después de la búsqueda
                 access = await self.access_handler.check(
-                    page
+                    current_page
                 )
 
                 access.validate()
 
-                # Extraer productos
                 data = await self.extractor.extract(
-                    page
+                    current_page
                 )
 
                 if not data.get("search_success"):
                     raise NavigationError(
-                        "No se encontraron "
-                        "productos en G2."
+                        "No se encontraron productos en G2."
                     )
 
-                # Convertir resultados a modelos
                 products = [
                     Product(
                         product_name=item["name"],
@@ -132,32 +129,21 @@ class G2Scraper(BaseScraper):
                     for item in data["products"]
                 ]
 
-                print(
-                    data["message"]
-                )
-
-                print(
-                    "Productos encontrados:"
-                )
+                print(data["message"])
+                print("Productos encontrados:")
 
                 for product in products:
                     print(
                         f"- {product.product_name}"
                     )
 
-                # Retornar resultado
                 return ScrapingResult(
                     products=products,
                     access_status=access.status,
                     attempts=attempt + 1,
                 )
 
-            except (
-                CaptchaDetectedError,
-                AccessBlockedError,
-                NavigationError,
-            ) as error:
-
+            except CaptchaDetectedError as error:
                 print(
                     f"Error: {error}"
                 )
@@ -169,25 +155,70 @@ class G2Scraper(BaseScraper):
                         products=[],
                         access_status="failed",
                         attempts=attempt + 1,
-                        failure_reason=(
-                            type(error).__name__
-                        ),
+                        failure_reason=type(error).__name__,
                     )
 
-                delay = (
-                    self.retry_policy.get_delay(
-                        attempt
-                    )
+                delay = self.retry_policy.get_delay(
+                    attempt
                 )
 
                 print(
-                    f"Reintentando en "
-                    f"{delay} segundos..."
+                    f"Reintentando en {delay} segundos..."
                 )
 
-                await asyncio.sleep(
-                    delay
+                await asyncio.sleep(delay)
+
+            except AccessBlockedError as error:
+                print(
+                    f"Acceso bloqueado: {error}"
                 )
+
+                if not self.retry_policy.should_retry(
+                    attempt + 1
+                ):
+                    return ScrapingResult(
+                        products=[],
+                        access_status="failed",
+                        attempts=attempt + 1,
+                        failure_reason=type(error).__name__,
+                    )
+
+                print(
+                    "El acceso actual está bloqueado."
+                )
+
+                print(
+                    "Intentando utilizar el siguiente proxy..."
+                )
+
+                current_page = await browser_manager.rotate_proxy(
+                    headless=browser_manager.settings.headless
+                )
+
+            except NavigationError as error:
+                print(
+                    f"Error: {error}"
+                )
+
+                if not self.retry_policy.should_retry(
+                    attempt + 1
+                ):
+                    return ScrapingResult(
+                        products=[],
+                        access_status="failed",
+                        attempts=attempt + 1,
+                        failure_reason=type(error).__name__,
+                    )
+
+                delay = self.retry_policy.get_delay(
+                    attempt
+                )
+
+                print(
+                    f"Reintentando en {delay} segundos..."
+                )
+
+                await asyncio.sleep(delay)
 
         return ScrapingResult(
             products=[],

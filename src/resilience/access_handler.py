@@ -40,6 +40,22 @@ class AccessHandler:
             page
         )
 
+        if access.status == "success":
+            return access
+
+        if access.status == "blocked":
+            print(
+                "Acceso bloqueado."
+            )
+
+            await self.captcha_provider.blocked(
+                page
+            )
+
+            return await self.access_detector.detect(
+                page
+            )
+
         if access.status != "captcha":
             return access
 

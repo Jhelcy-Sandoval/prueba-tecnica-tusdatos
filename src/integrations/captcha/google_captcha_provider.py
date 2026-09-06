@@ -38,6 +38,24 @@ class GoogleCaptchaProvider(CaptchaProvider):
             ) 
             print("Tienes 30 segundos para resolverla...") 
  
-            await asyncio.sleep(30) 
+            await asyncio.sleep(60) 
  
             return True
+        
+    async def blocked(
+        self,
+        page: Page,
+    ) -> bool:
+        '''
+        Gestiona el estado de bloqueo detectado en Google.
+        '''
+
+        print(
+            "Google mantiene bloqueado el acceso."
+        )
+
+        print(
+            f"URL del bloqueo: {page.url}"
+        )
+
+        return True

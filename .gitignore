@@ -6,3 +6,4 @@ playwright-brave-profile/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+config/proxies.json

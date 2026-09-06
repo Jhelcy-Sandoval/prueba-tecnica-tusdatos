@@ -6,3 +6,4 @@ __pycache__/
 .ruff_cache/
 .git/
 playwright-brave-profile/
+config/proxies.json

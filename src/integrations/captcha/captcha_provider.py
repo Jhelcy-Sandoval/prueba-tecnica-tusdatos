@@ -21,3 +21,11 @@ class CaptchaProvider(ABC):
     ) -> bool:
         """Intenta resolver el CAPTCHA detectado."""
         raise NotImplementedError
+    
+    @abstractmethod
+    async def blocked(
+        self,
+        page: Page,
+    ) -> bool:
+        """Gestiona una situación de bloqueo detectada."""
+        raise NotImplementedError

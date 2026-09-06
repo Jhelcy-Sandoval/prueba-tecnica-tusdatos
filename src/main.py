@@ -4,21 +4,23 @@ from playwright.async_api import async_playwright
 
 from browser.browser_manager import BrowserManager
 from config.settings import Settings
-
 from integrations.captcha.google_captcha_provider import (
     GoogleCaptchaProvider,
 )
 from scraper.browser.google_searcher import GoogleSearcher
-
 from metrics.scraper_metrics import ScraperMetrics
 from metrics.report_generator import ReportGenerator
-
 from persistence.dataset_writer import DatasetWriter
 from scraper.g2.g2_scraper import G2Scraper
 from scraper.scraping_runner import ScrapingRunner
 
 
 async def main():
+    '''
+    Inicializa los componentes del sistema y ejecuta
+    el proceso completo de scraping y generación de métricas.
+    '''
+
     settings = Settings()
 
     dataset_writer = DatasetWriter()
@@ -26,7 +28,6 @@ async def main():
     report_generator = ReportGenerator()
 
     async with async_playwright() as playwright:
-
         browser_manager = BrowserManager(
             playwright=playwright,
             settings=settings,
@@ -34,15 +35,20 @@ async def main():
 
         # Brave con perfil persistente
         context = await browser_manager.start(
-            headless=settings.headless
+            headless=settings.headless, 
+            use_proxy=False,
         )
 
         page = await context.new_page()
 
         # Aplicar configuración de stealth
-        await browser_manager.apply_stealth(page)
+        await browser_manager.apply_stealth(
+            page
+        )
 
-        scraper = G2Scraper(settings)
+        scraper = G2Scraper(
+            settings
+        )
 
         google_captcha_provider = GoogleCaptchaProvider()
 
@@ -53,6 +59,7 @@ async def main():
         runner = ScrapingRunner(
             scraper=scraper,
             google_searcher=google_searcher,
+            browser_manager=browser_manager,
             sample_count=settings.sample_count,
             sample_delay=settings.sample_delay,
         )
@@ -65,10 +72,9 @@ async def main():
         )
 
         for sample_id, result, execution_time in results:
-
             print(
-                f"\nProcesando resultados "
-                f"de la muestra {sample_id}"
+                f"\nProcesando resultados de la muestra "
+                f"{sample_id}"
             )
 
             print(result)
@@ -87,10 +93,14 @@ async def main():
             )
 
         print("\nMétricas:")
-        print(metrics.summary())
+        print(
+            metrics.summary()
+        )
 
         # Generar reporte después de registrar todas las métricas
-        report_generator.generate(metrics)
+        report_generator.generate(
+            metrics
+        )
 
         await browser_manager.close()
 
