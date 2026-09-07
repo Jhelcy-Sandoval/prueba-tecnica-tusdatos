@@ -1,6 +1,6 @@
 # Estrategia de Resiliencia (G2)
 
-Este documento describe las estrategias implementadas para mantener la continuidad del proceso de extracción ante errores de navegación, verificaciones de acceso, CAPTCHA, bloqueos de acceso y otros fallos recuperables. El objetivo es evitar que un fallo individual interrumpa el conjunto de ejecuciones, permitiendo que el sistema registre el resultado de cada muestra para su posterior análisis.
+Este documento describe las estrategias implementadas para mantener la continuidad del proceso de extracción ante errores de navegación, verificaciones de acceso, CAPTCHA, bloqueos de acceso, degradación de la sesión de navegación y otros fallos recuperables. El objetivo es evitar que un fallo individual interrumpa el conjunto de ejecuciones, permitiendo que el sistema registre el resultado de cada muestra para su posterior análisis.
 
 Este documento complementa la [Arquitectura del Sistema](./architecture.md) y el [Flujo de Scraping](./scraping-flow.md): describe específicamente **cómo** el sistema se recupera cuando algo falla.
 
@@ -14,8 +14,10 @@ La estrategia de resiliencia busca:
 - Gestionar verificaciones CAPTCHA.
 - Reintentar operaciones cuando el error es recuperable.
 - Rotar el entorno de ejecución cuando se detecta un bloqueo de acceso.
+- Renovar el contexto de navegación de forma programada, para reducir la acumulación de huella de sesión antes de que ocurra un bloqueo.
+- Recuperarse de cambios menores en el DOM mediante selectores alternativos.
 - Evitar que una ejecución fallida detenga las siguientes.
-- Mantener sincronizada la página activa después de una rotación de entorno.
+- Mantener sincronizada la página activa después de una rotación o renovación de contexto.
 - Registrar el estado y motivo de fallo de cada muestra.
 - Medir el comportamiento del sistema mediante métricas.
 - Mantener la integridad de los datos obtenidos.
@@ -24,16 +26,16 @@ La estrategia de resiliencia busca:
 
 ## 2. Detección del Estado de Acceso
 
-La detección de problemas de acceso está centralizada en `AccessDetector`, que analiza el contenido de la página y determina el estado actual de acceso.
+La detección de problemas de acceso está centralizada en `AccessDetector`, que analiza el contenido de la página y determina el estado actual de acceso mediante un `AccessResult` especializado por caso:
 
-| Estado | Descripción | Comportamiento |
+| Resultado | Descripción | Comportamiento |
 |---|---|---|
-| `success` | La página está disponible y puede continuar el proceso. | Continúa el flujo normal. |
-| `captcha` | Se detectó una verificación CAPTCHA. | Se delega a `AccessHandler` → `CaptchaProvider`. |
-| `blocked` | Se detectó un bloqueo de acceso, incluyendo un `hard-block` de DataDome. | Se lanza `AccessBlockedError` y se inicia la estrategia de recuperación. |
-| `unknown` | No fue posible determinar el estado de acceso. | Estado no determinado; se trata como condición de acceso a evaluar. |
+| `AccessGranted` | La página está disponible y puede continuar el proceso. | Continúa el flujo normal. |
+| `CaptchaRequired` | Se detectó una verificación CAPTCHA. | Se delega a `AccessHandler` → `CaptchaProvider`. |
+| `AccessBlocked` | Se detectó un bloqueo de acceso, incluyendo un `hard-block` de DataDome. | Se lanza `AccessBlockedError` y se inicia la estrategia de recuperación. |
+| `AccessUnknown` | No fue posible determinar el estado de acceso. | Estado no determinado; se trata como condición de acceso a evaluar. |
 
-El resultado de la detección se representa mediante `AccessResult`, lo que permite separar la detección del estado de acceso de las acciones que deben ejecutarse posteriormente.
+Cada resultado implementa su propio comportamiento de validación, lo que permite separar la detección del estado de acceso de las acciones que deben ejecutarse posteriormente, en lugar de centralizar todos los casos mediante condicionales dentro de un único validador.
 
 La detección de DataDome contempla específicamente el indicador de `hard-block` dentro del iframe de verificación. Esto permite diferenciar un bloqueo de acceso de una verificación CAPTCHA.
 
@@ -133,9 +135,41 @@ El cambio de entorno no garantiza que el siguiente acceso sea exitoso. Cada nuev
 
 ---
 
-## 5. Rotación y Ciclo de Vida de la Página
+## 5. Renovación Programada de Contextos
 
-La rotación de entorno implica cerrar el contexto anterior y crear uno nuevo. Esto puede invalidar la instancia de `Page` utilizada por la ejecución anterior.
+Además de la rotación reactiva ante un bloqueo (sección 4), el sistema aplica una **renovación programada** del contexto de navegación cada 5 muestras, independientemente de si se detectó o no un problema de acceso.
+
+```text
+Muestra 1 → 2 → 3 → 4 → 5
+                          │
+                          ▼
+              BrowserManager.destroy_context()
+                          │
+                          ▼
+              Crear nuevo contexto
+                          │
+                          ▼
+              Reiniciar desde Google
+              (GoogleSearcher.search)
+                          │
+                          ▼
+                Muestra 6 → 10
+                          │
+                          ▼
+                         ...
+```
+
+`BrowserManager.destroy_context()` cierra la página activa, cierra el contexto y elimina las referencias internas correspondientes. El navegador en sí permanece disponible — esta operación destruye una **sesión de ejecución**, no el navegador completo.
+
+Al iniciar el nuevo contexto, el flujo **no reutiliza indefinidamente** la URL de G2 obtenida en el bloque anterior: vuelve a pasar por `GoogleSearcher` para localizar el dominio objetivo desde cero. Esto evita mantener un único fingerprint de sesión durante las 100 ejecuciones, reduciendo la probabilidad de acumular suficientes señales como para activar un bloqueo de DataDome antes de que ocurra.
+
+Esta renovación programada y la rotación reactiva ante bloqueo (sección 4) son mecanismos complementarios: uno actúa preventivamente por volumen, el otro reactivamente por detección de bloqueo.
+
+---
+
+## 6. Ciclo de Vida de la Página
+
+Tanto la rotación reactiva (sección 4) como la renovación programada (sección 5) implican cerrar el contexto anterior y crear uno nuevo. Esto puede invalidar la instancia de `Page` utilizada por la ejecución anterior.
 
 Para evitar que una muestra posterior intente utilizar una página cerrada, `BrowserManager` mantiene una referencia de la página activa.
 
@@ -145,10 +179,10 @@ El flujo es:
 Page A
   │
   ▼
-Bloqueo detectado
+Bloqueo detectado o renovación programada
   │
   ▼
-BrowserManager.rotate_proxy()
+BrowserManager.destroy_context() / rotate_proxy()
   │
   ├── Cierra contexto de Page A
   │
@@ -167,11 +201,34 @@ su referencia de página
 Siguiente muestra utiliza Page B
 ```
 
-Esta sincronización evita que `ScrapingRunner` conserve una referencia a una página cuyo contexto ya fue cerrado y permite continuar la ejecución después de una rotación de entorno.
+Esta sincronización evita que `ScrapingRunner` conserve una referencia a una página cuyo contexto ya fue cerrado, y permite continuar la ejecución tanto después de una rotación por bloqueo como después de una renovación programada.
 
 ---
 
-## 6. Política de Reintentos: `RetryPolicy`
+## 7. Resiliencia ante Cambios del DOM
+
+Los selectores utilizados por G2 están centralizados en `G2Selectors`. Cuando existen varias alternativas posibles para localizar un elemento (por ejemplo, el rating o las reviews de un producto), `G2SelectorResolver` prueba los selectores en el orden definido hasta encontrar uno disponible, en lugar de depender de un único selector fijo.
+
+```text
+G2Selectors
+      │
+      ▼
+G2SelectorResolver
+      │
+      ├── Selector principal
+      │
+      ├── Selector alternativo
+      │
+      └── Selector de respaldo
+```
+
+`G2ProductDataExtractor` utiliza `G2SelectorResolver` para resolver estos selectores al extraer los datos de un producto, y `G2ProductValidator` se apoya en el mismo mecanismo para confirmar que la página corresponde al producto esperado.
+
+**Alcance de esta mitigación:** cubre cambios en los selectores específicos dentro de una página que sí cargó correctamente (por ejemplo, si G2 renombra la clase CSS del rating). **No cubre** condiciones de UI completamente inesperadas donde no hay ningún DOM útil que resolver — como el caso documentado en la sección 12 (`about:blank`), donde no existe ningún selector, alternativo o no, que pueda encontrar el elemento porque la página nunca terminó de cargar el contenido esperado.
+
+---
+
+## 8. Política de Reintentos: `RetryPolicy`
 
 `RetryPolicy` encapsula la estrategia de reintentos para cada muestra.
 
@@ -220,7 +277,7 @@ Esto evita que una condición externa detenga el conjunto completo de ejecucione
 
 ---
 
-## 7. Continuidad entre Muestras
+## 9. Continuidad entre Muestras
 
 Cada muestra se procesa de forma independiente y cuenta con su propio número de intentos.
 
@@ -244,7 +301,7 @@ De esta forma, un fallo individual no provoca la terminación anticipada del con
 
 ---
 
-## 8. Trazabilidad de Fallos
+## 10. Trazabilidad de Fallos
 
 Cada muestra, exitosa o no, se registra con información operacional en `ScrapingResult`:
 
@@ -258,75 +315,44 @@ Esta información se combina con los datos de negocio (`product_name`, `product_
 
 ---
 
-## 9. Qué es "recuperable" y qué no
+## 11. Qué es "recuperable" y qué no
 
 Un error se considera **recuperable** cuando corresponde a una condición que puede gestionarse mediante los mecanismos definidos por el sistema, como:
 
 - una verificación CAPTCHA que puede ser gestionada;
 - un bloqueo de acceso que permite intentar otro entorno;
+- un cambio de selector dentro de una página que sí cargó, resuelto mediante `G2SelectorResolver`;
 - un error de navegación que puede resolverse mediante un nuevo intento.
 
-Se considera **no recuperable** cuando se agotan los intentos definidos en `RetryPolicy` o cuando los mecanismos disponibles no consiguen restablecer el flujo.
+Se considera **no recuperable** cuando se agotan los intentos definidos en `RetryPolicy`, cuando los mecanismos disponibles no consiguen restablecer el flujo, o cuando la condición de fallo no está cubierta por ninguna de las excepciones tipadas del sistema (ver sección 12).
 
-En ese punto, la muestra se cierra como `failed` en lugar de seguir reintentando indefinidamente.
+En el primer caso, la muestra se cierra como `failed` en lugar de seguir reintentando indefinidamente. En el segundo, el proceso puede detenerse por completo — que es la brecha identificada en la sección 12.
 
-Esta distinción permite mantener un equilibrio entre continuidad y control de recursos.
-
----
-
-## 10. Estrategia Completa de Recuperación
-
-El comportamiento general del sistema puede resumirse de la siguiente manera:
-
-```text
-                    ┌───────────────┐
-                    │    Página     │
-                    └───────┬───────┘
-                            │
-                            ▼
-                    ┌───────────────┐
-                    │AccessDetector │
-                    └───────┬───────┘
-                            │
-              ┌─────────────┼─────────────┐
-              │             │             │
-              ▼             ▼             ▼
-          success        captcha       blocked
-              │             │             │
-              ▼             ▼             ▼
-          continuar    CaptchaProvider  RetryPolicy
-                            │             │
-                            ▼             ▼
-                       verificar     ¿Quedan intentos?
-                            │          │          │
-                            │          │          └── No → failed
-                            │          │
-                            │          └── Sí
-                            │               │
-                            │               ▼
-                            │       Rotación de entorno
-                            │               │
-                            │               ▼
-                            │       Nueva página/contexto
-                            │               │
-                            └───────────────┘
-                                    │
-                                    ▼
-                               Nuevo intento
-```
+Esta distinción permite mantener un equilibrio entre continuidad y control de recursos, aunque también deja claro que "resiliente" no significa "cubre absolutamente cualquier fallo posible".
 
 ---
 
-## 11. Resumen de la Defensa
+## 12. Excepciones No Cubiertas (Gap Identificado)
+
+Durante una ejecución real se presentó una condición que las excepciones tipadas actuales (`CaptchaDetectedError`, `AccessBlockedError`, `NavigationError`) no cubren: el navegador cargó una pantalla en blanco (`about:blank`) sin el elemento de búsqueda esperado. Como no existe un manejador específico para este caso, el error no se clasificó como una muestra fallida recuperable — interrumpió el proceso completo en lugar de registrarse y continuar con la siguiente muestra.
+
+Esto representa una brecha real entre el diseño de resiliencia (secciones 1-11) y su cobertura efectiva: el sistema está preparado para recuperarse de los escenarios anticipados (CAPTCHA, bloqueo, cambios de selector dentro de una página cargada, timeouts de navegación), pero no de condiciones de UI completamente inesperadas fuera de ese catálogo, donde no hay ningún DOM útil sobre el cual `G2SelectorResolver` pueda resolver una alternativa.
+
+**Corrección pendiente:** envolver el ciclo principal de `ScrapingRunner` en un manejo de excepción genérica que capture cualquier error no anticipado, lo registre con `access_status="failed"` y un `failure_reason` descriptivo, y continúe con la siguiente muestra — en lugar de propagar el error hasta detener el proceso completo. Esto extendería la garantía de continuidad (sección 9) para cubrir también las condiciones no anticipadas, no solo las excepciones tipadas actuales.
+
+---
+
+## 13. Resumen de la Defensa
 
 | Tema | Respuesta |
 |---|---|
-| Detección | `AccessDetector` centraliza la identificación de estados `success`, `captcha`, `blocked` y `unknown`. |
+| Detección | `AccessDetector` centraliza la identificación de `AccessGranted`, `CaptchaRequired`, `AccessBlocked` y `AccessUnknown`. |
 | CAPTCHA | `AccessHandler` delega la gestión al `CaptchaProvider` correspondiente al sitio. |
 | Bloqueos | `AccessBlockedError` activa una estrategia de recuperación basada en reintentos y rotación de entorno. |
-| Rotación | `BrowserManager` cierra el contexto actual y crea uno nuevo utilizando el siguiente entorno configurado. |
-| Ciclo de vida | `BrowserManager` mantiene la página activa y `ScrapingRunner` actualiza su referencia después de una rotación. |
+| Renovación programada | `BrowserManager` renueva el contexto cada 5 muestras y reinicia desde Google, independientemente de si hubo bloqueo. |
+| Cambios de DOM | `G2SelectorResolver` prueba selectores alternativos dentro de una página cargada; no cubre pantallas sin contenido útil. |
+| Ciclo de vida | `BrowserManager` mantiene la página activa y `ScrapingRunner` actualiza su referencia tras cada rotación o renovación. |
 | Reintentos | `RetryPolicy` limita los intentos y aplica backoff exponencial cuando corresponde. |
-| Continuidad | Una muestra fallida no detiene las siguientes ejecuciones. |
+| Continuidad | Una muestra fallida no detiene las siguientes ejecuciones — salvo la brecha de excepciones no tipadas (sección 12). |
 | Trazabilidad | Cada muestra conserva intentos, tiempo, estado de acceso y motivo de fallo. |
-| Trade-off | La recuperación no garantiza el éxito; existe un límite de intentos y cada fallo queda registrado. |
+| Trade-off | La recuperación no garantiza el éxito; existe un límite de intentos, una brecha conocida de cobertura, y cada fallo queda registrado. |

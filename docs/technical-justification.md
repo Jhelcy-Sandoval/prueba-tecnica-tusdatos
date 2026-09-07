@@ -12,8 +12,10 @@ Un scraper contra un sitio protegido por DataDome no puede asumir que cada solic
 
 `AccessDetector`, `AccessHandler`, `CaptchaProvider` y `RetryPolicy` son componentes independientes en lugar de lógica mezclada dentro del extractor, por dos razones prácticas:
 
-- **DataDome cambia de comportamiento** (a veces presenta CAPTCHA, a veces bloquea directo, a veces no reacciona). Si esa lógica estuviera embebida en `G2Extractor`, cada ajuste a la detección de acceso implicaría tocar código de extracción de datos, aumentando el riesgo de romper algo que ya funcionaba.
+- **DataDome cambia de comportamiento** (a veces presenta CAPTCHA, a veces bloquea directo, a veces no reacciona). Si esa lógica estuviera embebida en el flujo de extracción, cada ajuste a la detección de acceso implicaría tocar código de extracción de datos, aumentando el riesgo de romper algo que ya funcionaba.
 - **Permite evolucionar cada pieza por separado**: se puede cambiar el proveedor de CAPTCHA, ajustar el número de reintentos, o agregar un nuevo estado de acceso sin que el resto del sistema se entere.
+
+La misma lógica aplica a la separación dentro de la extracción de productos: `G2Extractor` (candidatos), `G2ProductExtractor` (orquesta un producto), `G2ProductValidator` (confirma que la página es la esperada) y `G2ProductDataExtractor` (extrae rating/reviews) son responsabilidades distintas. Mezclarlas habría significado que un cambio en cómo se valida un producto pudiera romper cómo se extraen sus datos, o viceversa.
 
 ## Por qué backoff exponencial y no reintento inmediato
 
@@ -27,7 +29,19 @@ El requisito de negocio es "100 muestras con alta tasa de éxito e integridad", 
 
 Un `AccessBlockedError` en la misma IP no es una condición temporal como un CAPTCHA — es una decisión del sitio de dejar de servir esa IP. Reintentar sin cambiar de entorno no tiene sentido en ese caso específico; por eso `BrowserManager` puede rotar a un nuevo contexto de navegación con un proxy distinto, tratando el bloqueo de IP como una categoría de fallo distinta a un CAPTCHA o un timeout de navegación.
 
-**Limitación honesta de esta parte de la estrategia**: la rotación de entorno es tan efectiva como la calidad del pool de proxies disponible. En esta implementación, el pool disponible fue de proxies gratuitos/de baja reputación, que DataDome bloquea con la misma facilidad que la IP original tras un volumen similar de solicitudes. La arquitectura para rotar está correctamente implementada y separada del resto del sistema (cumple el objetivo de diseño); el resultado a escala de 100 ejecuciones depende de un recurso externo (proxies residenciales de pago) que no formaba parte del alcance posible de esta prueba. Ver el diagnóstico completo en [`performance-report.md`](./performance-report.md).
+**Limitación honesta de esta parte de la estrategia**: la rotación de entorno es tan efectiva como la calidad del pool de proxies disponible. En esta implementación, el pool disponible fue de proxies gratuitos/de baja reputación, que DataDome bloquea con relativa facilidad tras cierto volumen de solicitudes. La arquitectura para rotar está correctamente implementada y separada del resto del sistema (cumple el objetivo de diseño); el resultado a escala de 100 ejecuciones dependió también de intervención manual (reinicio de router) en los episodios de bloqueo real. Ver el diagnóstico completo en [`performance-report.md`](./performance-report.md).
+
+## Por qué renovar el contexto de forma programada, no solo reactiva
+
+La rotación ante `AccessBlockedError` es una respuesta *reactiva*: actúa después de que el sitio ya decidió bloquear. Pero mantener un único contexto de navegador durante 100 ejecuciones seguidas acumula una huella de sesión (cookies, fingerprint, patrón de timing) que hace más probable que ese bloqueo ocurra. Por eso `BrowserManager` destruye y recrea el contexto cada 5 muestras de forma programada, independientemente de si hubo o no un problema de acceso, y cada contexto nuevo relocaliza G2 desde Google en vez de reutilizar indefinidamente la misma sesión.
+
+Es una mitigación preventiva, no una garantía: en la corrida real igual se presentó un bloqueo (documentado en `performance-report.md`), pero la renovación programada, combinada con la rotación reactiva, es lo que permitió que el sistema se mantuviera estable durante bloques largos de ejecución en vez de degradarse de forma continua.
+
+## Por qué selectores alternativos en vez de un único selector fijo
+
+Un extractor que depende de un único selector CSS asume que el HTML de G2 nunca cambia — una asunción frágil para cualquier sitio real. `G2SelectorResolver` prueba una lista ordenada de selectores (principal, alternativo, de respaldo) antes de darse por vencido, para que un cambio menor en el markup de G2 no rompa la extracción de rating/reviews.
+
+**Límite explícito de esta solución**: cubre selectores dentro de una página que sí cargó su contenido. No resuelve el caso donde la página nunca terminó de renderizar nada útil (como el incidente de `about:blank` documentado en `resilience.md`, sección 12) — ahí no hay ningún selector, alternativo o no, que pueda encontrar un elemento que nunca llegó a existir en el DOM. Esa sigue siendo una brecha reconocida, no resuelta por este mecanismo.
 
 ## Por qué validación con Pydantic en el modelo `Product`
 

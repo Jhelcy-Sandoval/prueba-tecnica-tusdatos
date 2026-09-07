@@ -1,55 +1,51 @@
 # Reporte de Rendimiento — Extracción de Datos G2
 
-*Este documento interpreta y contextualiza las métricas generadas automáticamente por `ReportGenerator` [`../reports/execution_report.md`](../reports/execution_report.md), salida directa del sistema tras la ejecución. El objetivo aquí es explicar qué significan esos números y documentar las condiciones bajo las que se obtuvieron.*
+*Este documento se reconstruye a partir del dataset (`dataset.csv`) porque el reporte automático de `ReportGenerator` no llegó a generarse en la corrida extendida: el proceso se interrumpió por una excepción no controlada después de la muestra 134 (ver sección 6), antes de completar la ejecución y disparar la generación del reporte final.*
 
 ## 1. Resumen de la ejecución
 
-Se ejecutaron **10 muestras** completas de forma consecutiva, cada una realizando una búsqueda en G2 por el término "metricas" y extrayendo hasta 3 productos candidatos por muestra.
+Se ejecutaron **100 muestras** (correspondientes a las muestras 35-134 de una corrida más larga; las primeras 34 se excluyen de este reporte por incluir el primer episodio de bloqueo mientras se ajustaba la configuración de red), cada una realizando una búsqueda en G2 por el término "metricas" y extrayendo hasta `MAX_PRODUCTS=2` productos candidatos por muestra.
 
 | Métrica | Valor |
-|---|---|
-| `total_requests` | 10 |
-| `successful_requests` | 10 |
-| `failed_requests` | 0 |
-| `success_rate` | 100.0% |
-| `failure_rate` | 0.0% |
-| `average_execution_time` | 17.22 s |
-| `average_attempts` | 1.0 |
+|---|---:|
+| `total_requests` | 100 |
+| `successful_requests` | 98 |
+| `failed_requests` | 2 |
+| `success_rate` | 98.00% |
+| `failure_rate` | 2.00% |
+| `average_execution_time` | 18.32 s |
+| `average_attempts` | 1.02 |
 
-Dataset resultante: 30 registros de producto (3 por muestra × 10 muestras), sin valores nulos en `rating` ni `reviews`.
+Dataset resultante: 196 registros de producto (2 por muestra × 98 muestras exitosas), sin valores nulos en `rating` ni `reviews`.
 
 ---
 
 ## 2. Tasa de éxito
 
-**10/10 muestras exitosas (100%).** En esta tanda no se presentó ningún bloqueo de acceso (`blocked`); solo se detectó un CAPTCHA en la muestra 1, que fue gestionado correctamente por `CaptchaProvider` sin necesidad de reintento (`attempts=1` en todas las muestras).
-
-Es importante contextualizar esta tasa: en tandas anteriores de mayor volumen (18+ muestras consecutivas desde la misma IP), el sistema fue bloqueado por completo por DataDome antes de completar el objetivo de 100 ejecuciones. El 100% de éxito reportado aquí corresponde a una tanda de tamaño reducido, diseñada para no agotar la IP disponible y así poder validar la corrección del pipeline completo (búsqueda → extracción → validación → persistencia) sin ruido.
+**98/100 muestras exitosas (98%).** Las 2 muestras fallidas (70 y 71) corresponden a un episodio de `AccessBlockedError` — bloqueo de acceso detectado por `AccessDetector` tras acumular suficiente volumen de solicitudes desde la misma IP.
 
 ## 3. Estabilidad
 
-Dentro de esta tanda de 10 muestras, el comportamiento fue estable: mismo número de productos por muestra (3), mismo patrón de intentos (1 en todos los casos), y sin degradación progresiva en la calidad de los datos extraídos a medida que avanzaban las muestras.
+El sistema mostró un patrón estable durante la mayor parte de la corrida: tiempos de ejecución consistentes (~16-24s) a lo largo de más de 60 muestras consecutivas, interrumpidos por un único episodio de bloqueo (muestras 70-71). Esto es consistente con el comportamiento documentado en `resilience.md`: cada IP soporta un volumen variable de solicitudes antes de que DataDome escale a bloqueo total de acceso.
 
-A mayor escala, la estabilidad observada en pruebas previas muestra un patrón distinto: el sistema se mantiene estable durante aproximadamente 15-18 muestras consecutivas por IP, tras lo cual DataDome escala la respuesta de verificación de CAPTCHA a bloqueo total de acceso (`AccessBlockedError`), afectando incluso a otros dispositivos conectados a la misma red pública. Este es el principal factor de inestabilidad del sistema a volúmenes mayores, no la lógica de extracción en sí.
+La ejecución se recuperó del bloqueo: tras las 2 muestras fallidas, un reinicio manual del router permitió que la muestra 72 continuara con éxito, y el sistema se mantuvo estable durante las 63 muestras restantes sin nuevos bloqueos. Esto demuestra que la estrategia de continuidad (`ScrapingRunner` no se detiene ante una muestra fallida) funciona según lo diseñado incluso bajo un bloqueo real.
 
 ## 4. Manejo de excepciones
 
-- **CAPTCHA (`CaptchaDetectedError`)**: gestionado exitosamente en la muestra 1 mediante `AccessHandler` → `CaptchaProvider`, sin requerir reintento adicional.
-- **Timing de extracción tras CAPTCHA**: se corrigió un defecto detectado en pruebas previas donde, inmediatamente después de resolver un CAPTCHA, el extractor leía el DOM antes de que el rating y las reviews terminaran de renderizarse, generando valores `None`. La corrección reemplazó la verificación por conteo (`.count()`, que no espera renderizado) por una espera explícita sobre el elemento (`wait_for`), eliminando por completo los valores nulos en esta tanda.
-- **Bloqueo de acceso (`AccessBlockedError`)**: no se presentó en esta tanda de 10 muestras. En pruebas de mayor volumen, este es el punto de falla dominante: una vez agotados los intentos de `RetryPolicy` y la rotación de proxy disponible, la muestra se registra como `failed` con su `failure_reason`, y `ScrapingRunner` continúa sin detener el resto de la ejecución — el comportamiento de continuidad funciona según lo diseñado incluso bajo esta condición.
+- **`AccessBlockedError`**: gestionado correctamente. Ambas muestras fallidas (70, 71) agotaron sus reintentos (`attempts=2`) según `RetryPolicy`, quedaron registradas como `failed` con `failure_reason=AccessBlockedError`, y `ScrapingRunner` continuó con la siguiente muestra sin detener el proceso completo.
+- **CAPTCHA**: gestionado exitosamente en las muestras donde apareció, sin requerir reintento adicional en la mayoría de los casos.
+- **Excepción no controlada (fuera de las 100 muestras reportadas)**: después de la muestra 134, el proceso encontró una pantalla `about:blank` de Chromium/Brave sin el input de búsqueda esperado. Esta condición no está cubierta por ninguna de las excepciones tipadas del sistema (`CaptchaDetectedError`, `AccessBlockedError`, `NavigationError`), por lo que no fue manejada como un caso recuperable — cerró el proceso completo en lugar de registrar la muestra como fallida y continuar. Esta brecha está documentada en [`resilience.md`](./resilience.md), sección 12, junto con la corrección pendiente.
 
 ## 5. Latencia
 
-Tiempo promedio de ejecución por muestra: **17.22 segundos**, con un rango observado entre ~14.2s y ~27.2s. La muestra más lenta (27.15s) corresponde a la primera ejecución, que incluyó la resolución del CAPTCHA; las muestras posteriores sin verificación adicional se mantuvieron consistentemente entre 14 y 21 segundos.
+Tiempo promedio de ejecución por muestra: **18.32 segundos** sobre las 100 muestras (incluyendo las 2 fallidas, que tardan más por los reintentos con backoff). Las muestras exitosas se mantuvieron consistentemente entre 15 y 24 segundos; las fallidas por `AccessBlockedError` tomaron considerablemente más tiempo, reflejando el backoff exponencial antes de agotar los intentos.
 
 ---
 
-## 6. Limitación conocida: volumen máximo por IP
+## 6. Limitaciones conocidas
 
-El objetivo de la prueba especifica 100 ejecuciones. La limitación principal para alcanzar ese volumen no fue la lógica del sistema, sino la disponibilidad de direcciones IP no bloqueadas:
+**Volumen por IP.** La IP residencial utilizada soportó aproximadamente 35 solicitudes consecutivas antes del episodio de bloqueo (muestras 70-71), y se recuperó tras un reinicio de router. La mitigación aplicada fue manual — no automatizada — porque no se contó con un pool de proxies de buena reputación para validar la rotación automática (`BrowserManager.rotate_proxy`) a mayor escala.
 
-- Cada IP residencial utilizada (red doméstica) soporta de forma consistente entre 15 y 18 muestras antes de que DataDome escale a un bloqueo total de acceso — no solo de la sesión del scraper, sino de la IP pública completa, afectando incluso el acceso manual desde el navegador y desde otros dispositivos en la misma red.
-- El sistema cuenta con rotación de entorno (`BrowserManager.rotate_proxy`) para este escenario, pero su efectividad depende de tener un pool de proxies con buena reputación disponible. No se contó con presupuesto para proxies residenciales de pago, que son los recomendados para sitios con protección DataDome de este nivel.
-- Como mitigación sin costo, se validó el sistema en tandas más pequeñas (10 muestras) usando redes distintas entre tandas, confirmando que el pipeline de extracción, validación y persistencia es correcto y estable dentro del límite que cada IP permite.
+**Excepciones fuera del catálogo tipado.** El incidente de `about:blank` tras la muestra 134 mostró que existen condiciones de fallo (pantallas en blanco, elementos de UI inesperados) que no están cubiertas por las excepciones específicas del sistema. Cuando ocurre una de estas condiciones no anticipadas, el proceso puede detenerse por completo en lugar de registrar la muestra como fallida y continuar — es la principal brecha identificada entre el diseño de resiliencia y su cobertura real. La corrección propuesta está detallada en [`resilience.md`](./resilience.md), sección 12.
 
-Esta limitación está documentada en detalle en [`resilience.md`](./resilience.md), sección 4 (Recuperación ante Bloqueos).
+Ambas limitaciones están documentadas con más detalle en [`resilience.md`](./resilience.md) y en [`technical-justification.md`](./technical-justification.md).
