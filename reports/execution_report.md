@@ -2,12 +2,12 @@
  
 ## Metrics 
  
-| Metric | Value | 
-|---|---:| 
-| Total requests | 10 | 
-| Successful requests | 10 | 
-| Failed requests | 0 | 
-| Success rate | 100.00% | 
-| Failure rate | 0.00% | 
-| Average execution time | 17.22 s | 
-| Average attempts | 1.00 | 
+| Metric | Value |
+|---|---:|
+| Total requests | 100 |
+| Successful requests | 98 |
+| Failed requests | 2 |
+| Success rate | 98.00% |
+| Failure rate | 2.00% |
+| Average execution time | 18.32 s |
+| Average attempts | 1.02 |

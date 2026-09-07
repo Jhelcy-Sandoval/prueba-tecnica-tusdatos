@@ -1,78 +1,127 @@
 import asyncio
 import time
-from dataclasses import dataclass, field
 
 from playwright.async_api import Page
 
 from browser.browser_manager import BrowserManager
 from scraper.base_scraper import BaseScraper
 from scraper.browser.google_searcher import GoogleSearcher
-from validation.scraping_result import ScrapingResult
 
 
-@dataclass
 class ScrapingRunner:
     '''
-    Ejecuta múltiples muestras utilizando un scraper.
+    Coordina la ejecución de las muestras configuradas
+    y entrega cada resultado individualmente.
     '''
 
-    scraper: BaseScraper
-    google_searcher: GoogleSearcher | None = None
-    browser_manager: BrowserManager | None = None
-    sample_count: int = 1
-    sample_delay: float = 2.0
-    results: list[tuple[int, ScrapingResult, float]] = field(
-        default_factory=list
-    )
+    def __init__(
+        self,
+        scraper: BaseScraper,
+        google_searcher: GoogleSearcher | None,
+        browser_manager: BrowserManager,
+        sample_count: int,
+        sample_delay: float,
+    ):
+        '''
+        Inicializa el runner con las dependencias necesarias
+        para ejecutar las muestras.
+        '''
+
+        self.scraper = scraper
+        self.google_searcher = google_searcher
+        self.browser_manager = browser_manager
+        self.sample_count = sample_count
+        self.sample_delay = sample_delay
 
     async def run(
         self,
         page: Page,
         query: str,
         target_url: str | None = None,
-    ) -> list[tuple[int, ScrapingResult, float]]:
+        start_sample_id: int = 1,
+    ):
         '''
-        Ejecuta las muestras configuradas y registra
-        el tiempo de ejecución de cada extracción.
+        Ejecuta las muestras configuradas y entrega cada resultado
+        inmediatamente después de finalizar su ejecución.
         '''
 
-        self.results.clear()
+        batch_size = 5
 
-        if target_url is None:
-            url = query
-
-        elif self.google_searcher:
-            url = await self.google_searcher.search(
-                page,
-                query,
-                target_url,
-            )
-
-            if not url:
-                print(
-                    "No se encontró un resultado "
-                    "para el dominio objetivo."
-                )
-
-                return []
-
-            print(
-                "Resultado objetivo encontrado. "
-                "Iniciando extracción."
-            )
-
-        else:
-            url = target_url
-
-        for sample in range(
+        for index in range(
             self.sample_count
         ):
-            sample_id = sample + 1
+
+            sample_id = (
+                start_sample_id + index
+            )
+
+            if index > 0 and index % batch_size == 0:
+
+                print(
+                    "\nSe completaron 5 muestras."
+                )
+
+                print(
+                    "Eliminando el contexto actual..."
+                )
+
+                await self.browser_manager.destroy_context()
+
+                print(
+                    "Creando un nuevo contexto..."
+                )
+
+                context = await self.browser_manager.start(
+                    headless=self.browser_manager.settings.headless,
+                    use_proxy=False,
+                )
+
+                page = await context.new_page()
+
+                self.browser_manager.page = page
+
+                print(
+                    "Nuevo contexto creado."
+                )
+
+            if target_url is None:
+                url = query
+
+            elif self.google_searcher:
+
+                print(
+                    "\nIniciando búsqueda desde Google..."
+                )
+
+                url = await self.google_searcher.search(
+                    page,
+                    query,
+                    target_url,
+                )
+
+                if not url:
+                    print(
+                        "No se encontró un resultado "
+                        "para el dominio objetivo."
+                    )
+
+                    return
+
+                print(
+                    "Resultado objetivo encontrado. "
+                    "Iniciando extracción."
+                )
+
+            else:
+                url = target_url
 
             print(
-                f"Muestra {sample_id}/"
-                f"{self.sample_count}"
+                f"\nMuestra {sample_id}/"
+                f"{start_sample_id + self.sample_count - 1}"
             )
+
+            if self.browser_manager.page:
+                page = self.browser_manager.page
 
             start_time = time.perf_counter()
 
@@ -82,10 +131,7 @@ class ScrapingRunner:
                 self.browser_manager,
             )
 
-            if (
-                self.browser_manager
-                and self.browser_manager.page
-            ):
+            if self.browser_manager.page:
                 page = self.browser_manager.page
 
             execution_time = (
@@ -93,17 +139,17 @@ class ScrapingRunner:
                 - start_time
             )
 
-            self.results.append(
-                (
-                    sample_id,
-                    result,
-                    execution_time,
-                )
+            yield (
+                sample_id,
+                result,
+                execution_time,
             )
 
-            if sample < self.sample_count - 1:
+            if self.sample_delay > 0:
                 await asyncio.sleep(
                     self.sample_delay
                 )
 
-        return self.results
+        print(
+            "\nFinalizaron todas las muestras."
+        )

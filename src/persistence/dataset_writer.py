@@ -33,6 +33,34 @@ class DatasetWriter:
 
         self.file_path = Path(file_path)
 
+    def get_last_sample_id(self) -> int:
+        '''
+        Obtiene el último identificador de muestra registrado
+        en el dataset.
+        '''
+
+        if not self.file_path.exists():
+            return 0
+
+        with self.file_path.open(
+            mode="r",
+            newline="",
+            encoding="utf-8",
+        ) as file:
+
+            reader = csv.DictReader(file)
+
+            sample_ids = [
+                int(row["sample_id"])
+                for row in reader
+                if row.get("sample_id")
+            ]
+
+        return max(
+            sample_ids,
+            default=0,
+        )
+
     def save(
         self,
         result: ScrapingResult,
@@ -65,21 +93,43 @@ class DatasetWriter:
             if not file_exists:
                 writer.writeheader()
 
-            for product in result.products:
-                writer.writerow(
-                    {
-                        "sample_id": sample_id,
-                        "product_name": product.product_name,
-                        "product_url": str(
-                            product.product_url
-                        ),
-                        "rating": product.rating,
-                        "reviews": product.reviews,
-                        "access_status": result.access_status,
-                        "attempts": result.attempts,
-                        "execution_time": execution_time,
-                        "failure_reason": (
-                            result.failure_reason or ""
-                        ),
-                    }
-                )
+            if result.products:
+
+                for product in result.products:
+                    writer.writerow(
+                        {
+                            "sample_id": sample_id,
+                            "product_name": product.product_name,
+                            "product_url": str(
+                                product.product_url
+                            ),
+                            "rating": product.rating,
+                            "reviews": product.reviews,
+                            "access_status": (
+                                result.access_status
+                            ),
+                            "attempts": result.attempts,
+                            "execution_time": execution_time,
+                            "failure_reason": (
+                                result.failure_reason or ""
+                            ),
+                        }
+                    )
+
+                return
+
+            writer.writerow(
+                {
+                    "sample_id": sample_id,
+                    "product_name": "",
+                    "product_url": "",
+                    "rating": "",
+                    "reviews": "",
+                    "access_status": result.access_status,
+                    "attempts": result.attempts,
+                    "execution_time": execution_time,
+                    "failure_reason": (
+                        result.failure_reason or ""
+                    ),
+                }
+            )

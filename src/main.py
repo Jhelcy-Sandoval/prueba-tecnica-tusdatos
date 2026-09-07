@@ -29,6 +29,19 @@ async def main():
     metrics = ScraperMetrics()
     report_generator = ReportGenerator()
 
+    last_sample_id = (
+        dataset_writer.get_last_sample_id()
+    )
+
+    start_sample_id = (
+        last_sample_id + 1
+    )
+
+    print(
+        f"Continuando desde la muestra "
+        f"{start_sample_id}"
+    )
+
     async with async_playwright() as playwright:
         browser_manager = BrowserManager(
             playwright=playwright,
@@ -62,7 +75,7 @@ async def main():
             captcha_provider=google_captcha_provider,
             selector_resolver=selector_resolver,
         )
-        
+
         runner = ScrapingRunner(
             scraper=scraper,
             google_searcher=google_searcher,
@@ -72,13 +85,16 @@ async def main():
         )
 
         # Inicio del flujo del scraper
-        results = await runner.run(
+        async for (
+            sample_id,
+            result,
+            execution_time,
+        ) in runner.run(
             page,
             settings.search_query,
             settings.target_url,
-        )
-
-        for sample_id, result, execution_time in results:
+            start_sample_id=start_sample_id,
+        ):
             print(
                 f"\nProcesando resultados de la muestra "
                 f"{sample_id}"
