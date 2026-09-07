@@ -15,7 +15,13 @@ from resilience.exceptions import (
 from resilience.retry_policy import RetryPolicy
 from scraper.base_scraper import BaseScraper
 from scraper.g2.g2_extractor import G2Extractor
+from scraper.g2.g2_product_data_extractor import (
+    G2ProductDataExtractor,
+)
+from scraper.g2.g2_product_extractor import G2ProductExtractor
+from scraper.g2.g2_product_validator import G2ProductValidator
 from scraper.g2.g2_searcher import G2Searcher
+from scraper.g2.g2_selector_resolver import G2SelectorResolver
 from scraper.g2.g2_ui_handler import G2UIHandler
 from validation.product import Product
 from validation.scraping_result import ScrapingResult
@@ -43,22 +49,42 @@ class G2Scraper(BaseScraper):
 
         self.access_detector = AccessDetector()
 
-        g2_captcha_provider = G2CaptchaProvider()
+        selector_resolver = G2SelectorResolver()
+        
+        g2_captcha_provider = G2CaptchaProvider(
+            selector_resolver=selector_resolver,
+        )
 
         self.access_handler = AccessHandler(
             access_detector=self.access_detector,
             captcha_provider=g2_captcha_provider,
         )
 
+
         self.g2_searcher = G2Searcher(
-            search_query=settings.g2_search_query
+            search_query=settings.g2_search_query,
+            selector_resolver=selector_resolver,
         )
 
         ui_handler = G2UIHandler()
 
+        product_validator = G2ProductValidator()
+
+        data_extractor = G2ProductDataExtractor(
+            selector_resolver=selector_resolver,
+        )
+
+        product_extractor = G2ProductExtractor(
+            access_handler=self.access_handler,
+            product_validator=product_validator,
+            data_extractor=data_extractor,
+        )
+
         self.extractor = G2Extractor(
             ui_handler=ui_handler,
-            access_handler=self.access_handler,
+            product_extractor=product_extractor,
+            selector_resolver=selector_resolver,
+            settings=settings,
         )
 
     async def scrape(

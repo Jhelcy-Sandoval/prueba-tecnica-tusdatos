@@ -5,6 +5,8 @@ from urllib.parse import urljoin, urlparse
 from playwright.async_api import Page
 
 from integrations.captcha.captcha_provider import CaptchaProvider
+from scraper.g2.g2_selector_resolver import G2SelectorResolver
+from scraper.browser.google_selectors import GoogleSelectors
 
 
 class GoogleSearcher:
@@ -16,13 +18,20 @@ class GoogleSearcher:
     def __init__(
         self,
         captcha_provider: CaptchaProvider,
+        selector_resolver: G2SelectorResolver | None = None,
     ):
         '''
         Inicializa el buscador con el proveedor encargado
-        de gestionar las verificaciones CAPTCHA.
+        de gestionar las verificaciones CAPTCHA y el componente
+        encargado de resolver los selectores.
         '''
 
         self.captcha_provider = captcha_provider
+
+        self.selector_resolver = (
+            selector_resolver
+            or G2SelectorResolver()
+        )
 
     async def search(
         self,
@@ -55,28 +64,18 @@ class GoogleSearcher:
         if not await self._handle_captcha(page):
             return None
 
-        try:
-            reject_or_accept_btn = page.locator(
-                'button:has-text("Aceptar todo"), '
-                'button:has-text("Accept all")'
-            )
+        await self._handle_consent(page)
 
-            if await reject_or_accept_btn.is_visible(
-                timeout=3000
-            ):
-                await reject_or_accept_btn.click()
+        search_box = await self.selector_resolver.find_first(
+            page,
+            GoogleSelectors.SEARCH_INPUT,
+        )
 
-                await asyncio.sleep(1)
-
-        except Exception as error:
+        if search_box is None:
             print(
-                "No fue posible gestionar el "
-                f"consentimiento de Google: {error}"
+                "Buscador de Google no encontrado."
             )
-
-        search_box = page.locator(
-            'textarea[name="q"], input[name="q"]'
-        ).first
+            return None
 
         await search_box.click()
 
@@ -108,13 +107,19 @@ class GoogleSearcher:
             f"Título: {await page.title()}"
         )
 
-        # Comprobar CAPTCHA después de realizar la búsqueda.
         if not await self._handle_captcha(page):
             return None
 
-        results = page.locator(
-            "cite.tjvcx.GvPZzd.cHaqb"
+        results = await self.selector_resolver.find_all(
+            page,
+            GoogleSelectors.SEARCH_RESULTS,
         )
+
+        if results is None:
+            print(
+                "Resultados de Google no encontrados."
+            )
+            return None
 
         count = await results.count()
 
@@ -158,10 +163,12 @@ class GoogleSearcher:
                     "xpath=ancestor::a[@href][1]"
                 )
 
-                if (
-                    await title_link.locator("h3").count()
-                    == 0
-                ):
+                title = await self.selector_resolver.find_first(
+                    title_link,
+                    GoogleSelectors.RESULT_TITLE,
+                )
+
+                if title is None:
                     continue
 
                 destination = (
@@ -188,6 +195,38 @@ class GoogleSearcher:
         )
 
         return None
+
+    async def _handle_consent(
+        self,
+        page: Page,
+    ) -> None:
+        '''
+        Gestiona el consentimiento de cookies mostrado
+        por Google cuando está disponible.
+        '''
+
+        try:
+            consent_button = (
+                await self.selector_resolver.find_first(
+                    page,
+                    GoogleSelectors.CONSENT_BUTTON,
+                    timeout=3000,
+                )
+            )
+
+            if consent_button is None:
+                return
+
+            if await consent_button.is_visible():
+                await consent_button.click()
+
+                await asyncio.sleep(1)
+
+        except Exception as error:
+            print(
+                "No fue posible gestionar el "
+                f"consentimiento de Google: {error}"
+            )
 
     async def _handle_captcha(
         self,

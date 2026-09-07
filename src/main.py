@@ -14,6 +14,8 @@ from persistence.dataset_writer import DatasetWriter
 from scraper.g2.g2_scraper import G2Scraper
 from scraper.scraping_runner import ScrapingRunner
 
+from scraper.g2.g2_selector_resolver import G2SelectorResolver
+
 
 async def main():
     '''
@@ -35,11 +37,13 @@ async def main():
 
         # Brave con perfil persistente
         context = await browser_manager.start(
-            headless=settings.headless, 
+            headless=settings.headless,
             use_proxy=False,
         )
 
         page = await context.new_page()
+
+        browser_manager.page = page
 
         # Aplicar configuración de stealth
         await browser_manager.apply_stealth(
@@ -52,10 +56,13 @@ async def main():
 
         google_captcha_provider = GoogleCaptchaProvider()
 
-        google_searcher = GoogleSearcher(
-            captcha_provider=google_captcha_provider
-        )
+        selector_resolver = G2SelectorResolver()
 
+        google_searcher = GoogleSearcher(
+            captcha_provider=google_captcha_provider,
+            selector_resolver=selector_resolver,
+        )
+        
         runner = ScrapingRunner(
             scraper=scraper,
             google_searcher=google_searcher,

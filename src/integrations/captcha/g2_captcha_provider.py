@@ -1,8 +1,12 @@
 import asyncio
 import random
 import math
+
 from playwright.async_api import Page
+
 from integrations.captcha.captcha_provider import CaptchaProvider
+from scraper.g2.g2_selector_resolver import G2SelectorResolver
+from scraper.g2.g2_selectors import G2Selectors
 
 
 class G2CaptchaProvider(CaptchaProvider):
@@ -11,55 +15,82 @@ class G2CaptchaProvider(CaptchaProvider):
     utilizados por G2/DataDome.
     '''
 
-    CAPTCHA_SELECTOR = 'iframe[title="DataDome CAPTCHA"]'
-    SLIDER_CONTAINER_SELECTOR = ".sliderContainer"
-    SLIDER_SELECTOR = ".slider"
-    HARD_BLOCK_SELECTOR = '[data-dd-response-page="hard-block"]'
+    def __init__(
+        self,
+        selector_resolver: G2SelectorResolver,
+    ):
+        '''
+        Inicializa el proveedor con el componente encargado
+        de resolver los selectores de G2.
+        '''
 
-    async def solve(self, page: Page) -> bool:
+        self.selector_resolver = selector_resolver
+
+    async def solve(
+        self,
+        page: Page,
+    ) -> bool:
         '''
         Gestiona el CAPTCHA de G2 mediante la interacción
         con el componente de verificación disponible en la página.
         '''
 
         try:
-            iframe_element = page.locator(self.CAPTCHA_SELECTOR)
-            await iframe_element.wait_for(
-                state="attached",
-                timeout=10_000
+            iframe_element = await self.selector_resolver.find_first(
+                page,
+                G2Selectors.CAPTCHA_SELECTOR,
             )
 
+            if iframe_element is None:
+                print(
+                    "iframe CAPTCHA no encontrado."
+                )
+                return False
+
             iframe_box = await iframe_element.bounding_box()
+
             if not iframe_box:
-                print("No se pudo calcular el bounding box del iframe.")
+                print(
+                    "No se pudo calcular el bounding box del iframe."
+                )
                 return False
 
         except Exception as error:
-            print(f"iframe CAPTCHA no encontrado: {error}")
+            print(
+                f"iframe CAPTCHA no encontrado: {error}"
+            )
             return False
 
         await asyncio.sleep(1.5)
 
-        frame = page.frame_locator(self.CAPTCHA_SELECTOR)
-        slider_container = frame.locator(
-            self.SLIDER_CONTAINER_SELECTOR
+        frame = page.frame_locator(
+            G2Selectors.CAPTCHA_SELECTOR[0]
         )
+
+        slider_container = frame.locator(
+            G2Selectors.SLIDER_CONTAINER_SELECTOR[0]
+        )
+
         slider = frame.locator(
-            self.SLIDER_SELECTOR
+            G2Selectors.SLIDER_SELECTOR[0]
         )
 
         try:
             await slider_container.wait_for(
                 state="visible",
-                timeout=10_000
+                timeout=10_000,
             )
 
             if await slider.count() == 0:
-                print(".slider no encontrado dentro del iframe.")
+                print(
+                    ".slider no encontrado dentro del iframe."
+                )
                 return False
 
         except Exception as error:
-            print(f"Componentes del slider no visibles: {error}")
+            print(
+                f"Componentes del slider no visibles: {error}"
+            )
             return False
 
         try:
@@ -68,7 +99,8 @@ class G2CaptchaProvider(CaptchaProvider):
 
             if not container_box or not button_box:
                 print(
-                    "Error calculando dimensiones de los elementos del slider."
+                    "Error calculando dimensiones "
+                    "de los elementos del slider."
                 )
                 return False
 
@@ -99,18 +131,20 @@ class G2CaptchaProvider(CaptchaProvider):
             await page.mouse.move(
                 start_x,
                 start_y,
-                steps=5
+                steps=5,
             )
 
             await asyncio.sleep(0.2)
+
             await page.mouse.down()
+
             await asyncio.sleep(0.3)
 
-            current_x = start_x
             steps = 45
 
             for i in range(1, steps + 1):
                 fraction = i / steps
+
                 t = math.sin(
                     fraction * (math.pi / 2)
                 )
@@ -121,12 +155,12 @@ class G2CaptchaProvider(CaptchaProvider):
 
                 jitter_y = start_y + random.uniform(
                     -1.5,
-                    1.5
+                    1.5,
                 )
 
                 await page.mouse.move(
                     target_x,
-                    jitter_y
+                    jitter_y,
                 )
 
                 await asyncio.sleep(
@@ -161,11 +195,11 @@ class G2CaptchaProvider(CaptchaProvider):
 
         try:
             frame = page.frame_locator(
-                self.CAPTCHA_SELECTOR
+                G2Selectors.CAPTCHA_SELECTOR[0]
             )
 
             hard_block = frame.locator(
-                self.HARD_BLOCK_SELECTOR
+                G2Selectors.HARD_BLOCK_SELECTOR[0]
             )
 
             count = await hard_block.count()
